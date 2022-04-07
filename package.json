@@ -1,0 +1,19 @@
+{
+  "name": "iap-server",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": "14.x.x"
+  },
+  "scripts": {
+    "version": "node --version",
+    "start": "node server.js",
+    "start-local": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/adc.json nodemon server.js",
+    "deploy": "gcloud app deploy --no-promote"
+  },
+  "dependencies": {
+    "@google-cloud/datastore": "^6.6.2",
+    "cors": "^2.8.5",
+    "express": "^4.17.3"
+  }
+}

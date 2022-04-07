@@ -1,0 +1,13 @@
+runtime: nodejs14
+
+instance_class: F1
+
+handlers:
+  - url: /favicon\.ico
+    static_files: favicon.ico
+    upload: favicon.ico
+
+  - url: /.*
+    secure: always
+    redirect_http_response_code: 301
+    script: auto

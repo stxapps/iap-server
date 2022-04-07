@@ -1,0 +1,16 @@
+module.exports.ALLOWED_ORIGINS = [
+  'http://127.0.0.1:8080',
+  'http://localhost:8080',
+  'https://localhost:3000',
+  'https://192.168.1.40:3000',
+  'https://192.168.1.41:3000',
+  'https://192.168.1.42:3000',
+  'https://192.168.1.43:3000',
+  'https://192.168.1.44:3000',
+  'https://192.168.1.45:3000',
+  'https://192.168.1.46:3000',
+  'https://d2r7uroqj51uls.cloudfront.net',
+  'https://brace.to',
+  'https://d2kp6vvq64w651.cloudfront.net',
+  'https://justnote.cc',
+];
