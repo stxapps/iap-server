@@ -36,10 +36,11 @@ export const PRODUCT_IDS = [COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER];
 export const VALID = 'VALID';
 export const INVALID = 'INVALID';
 export const UNKNOWN = 'UNKNOWN';
+export const ERROR = 'ERROR';
 
 // Topic
-export const PLAYSTORE_NOTIFICATIONS_BRACEDOTTO = 'playstore-notifications-bracedotto';
-export const PLAYSTORE_NOTIFICATIONS_JUSTNOTECC = 'playstore-notifications-justnotecc';
+//export const PLAYSTORE_NOTIFICATIONS_BRACEDOTTO = 'playstore-notifications-bracedotto';
+//export const PLAYSTORE_NOTIFICATIONS_JUSTNOTECC = 'playstore-notifications-justnotecc';
 
 // Table
 export const VERIFICATION = 'Verification';

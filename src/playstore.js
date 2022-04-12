@@ -1,3 +1,4 @@
+// Inspired by https://github.com/Deishelon/google-play-billing-validator
 import { google } from 'googleapis';
 
 import { getAppId } from './utils';

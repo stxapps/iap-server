@@ -1,22 +1,14 @@
-import appleReceiptVerify from "node-apple-receipt-verify";
+// Inspired by https://github.com/ladeiko/node-apple-receipt-verify
+//   and https://github.com/levibostian/dollabill-apple
+import dollabillApple from 'dollabill-apple';
 
 import { getAppstoreSecretKey } from './utils';
 
-appleReceiptVerify.config({
-  verbose: true,
-  ignoreExpiredError: true,
-  ignoreExpired: false,
-  extended: true,
-  //environment: ['production'], // or sandbox
-  excludeOldTransactions: true,
-});
-
 const verifySubscription = async (productId, token) => {
-  const secretKey = getAppstoreSecretKey(productId);
-  const purchasedProducts = await appleReceiptVerify.validate({
-    receipt: token, secret: secretKey,
+  const res = await dollabillApple.verifyReceipt({
+    receipt: token, sharedSecret: getAppstoreSecretKey(productId)
   });
-  return purchasedProducts;
+  return res;
 };
 
 const acknowledgeSubscription = async (/*userId,*/ productId, token) => {
