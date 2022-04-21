@@ -50,7 +50,7 @@ export const NOTIFY_LOG = 'NotifyLog';
 export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
 export const PURCHASE = 'Purchase';
-export const USER = 'User';
+export const PURCHASE_USER = 'PurchaseUser';
 
 // Status
 export const PENDING = 'PENDING'; // Payment pending

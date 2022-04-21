@@ -12,7 +12,8 @@ import {
   VALID, INVALID, UNKNOWN, ERROR,
 } from './const';
 import {
-  runAsyncWrapper, randomString, removeTailingSlash, isObject, isString, getAppId,
+  runAsyncWrapper, randomString, removeTailingSlash, isObject, isString,
+  getAppId,
 } from './utils';
 import appstoreKeys from './appstore-keys.json';
 
@@ -83,10 +84,12 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
   if (source === APPSTORE) {
     const verifyResult = await appstore.verifySubscription(productId, token);
     if (dollabillApple.isFailure(verifyResult)) {
-      if (![
+      // @ts-ignore
+      const appleErrorCode = verifyResult.appleErrorCode;
+      if (!appleErrorCode || ![
         AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
         AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
-      ].includes(verifyResult.code)) {
+      ].includes(appleErrorCode)) {
         // i.e. ServiceUnavailableError
         console.log(`(${logKey}) appstore.verifySubscription errors, return UNKNOWN`);
         results.status = UNKNOWN;
@@ -99,8 +102,17 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
       res.send(JSON.stringify(results));
       return;
     }
+    await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
 
-    verifyData = verifyResult.autoRenewableSubscriptions;
+    const subscriptions = verifyResult.autoRenewableSubscriptions;
+    if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
+
+    }
+    if (subscriptions.length !== 1) {
+
+    }
+
+    verifyData = subscriptions[0];
     console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
     // Acknowledge
@@ -123,6 +135,7 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
       res.send(JSON.stringify(results));
       return;
     }
+    await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
 
     verifyData = verifyResult.data;
     console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
@@ -131,10 +144,10 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
 
   }
 
-  // parse
-
-  await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyData);
-  await dataApi.addPurchase(logKey, source, userId, productId, token, verifyData);
+  await dataApi.addPurchase(
+    logKey, source, userId, productId, token,
+    dataApi.parseData(logKey, source, verifyData)
+  );
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /verify finished`);
@@ -162,13 +175,32 @@ app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res)
   })
   if (dollabillApple.isFailure(notifyResult)) {
 
+    return;
   }
+  await dataApi.saveNotifyLog(
+    logKey, APPSTORE, notifyResult.latestReceipt, notifyResult,
+  );
+
+  const subscriptions = notifyResult.autoRenewableSubscriptions;
+  if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
+
+  }
+  if (subscriptions.length !== 1) {
+
+  }
+
+  const notifyData = subscriptions[0];
+  console.log(`(${logKey}) notifyData: ${JSON.stringify(notifyData)}`);
 
   // Acknowledge
 
 
-  await dataApi.saveNotifyLog(logKey, reqBody, data);
-  await dataApi.updatePurchase(logKey, source, userId, productId, token, verifyData);
+
+
+  await dataApi.updatePurchase(
+    logKey, APPSTORE, null, notifyResult.latestReceipt,
+    dataApi.parseData(logKey, APPSTORE, notifyData)
+  );
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /appstore/notify finished`);
@@ -225,7 +257,8 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
     return;
   }
 
-  await dataApi.saveNotifyLog(logKey, reqBody, data);
+  reqBody.message.data = data;
+  await dataApi.saveNotifyLog(logKey, PLAYSTORE, token, reqBody);
 
   const verifyResult = await playstore.verifySubscription(productId, token);
   if (!verifyResult || !verifyResult.data || !verifyResult.data.orderId) {
@@ -240,6 +273,7 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
     res.status(200).end();
     return;
   }
+  await dataApi.saveVerifyLog(logKey, PLAYSTORE, null, productId, token, verifyResult);
 
   const verifyData = verifyResult.data;
   console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
@@ -247,8 +281,12 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
   // Acknowledge
 
 
-  await dataApi.saveVerifyLog(logKey,);
-  await dataApi.updatePurchase(logKey, source, userId, productId, token, verifyData);
+  // Invalidate or update!!!
+
+  await dataApi.updatePurchase(
+    logKey, PLAYSTORE, productId, token,
+    dataApi.parseData(logKey, PLAYSTORE, verifyData)
+  );
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /playstore/notify finished`);
