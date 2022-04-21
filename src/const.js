@@ -26,6 +26,8 @@ export const SOURCES = [APPSTORE, PLAYSTORE];
 export const COM_BRACEDOTTO = 'com.bracedotto';
 export const COM_JUSTNOTECC = 'com.justnotecc';
 
+export const APP_IDS = [COM_BRACEDOTTO, COM_JUSTNOTECC];
+
 // Product id
 export const COM_BRACEDOTTO_SUPPORTER = 'com.bracedotto.supporter';
 export const COM_JUSTNOTECC_SUPPORTER = 'com.justnotecc.supporter';
@@ -43,9 +45,9 @@ export const ERROR = 'ERROR';
 //export const PLAYSTORE_NOTIFICATIONS_JUSTNOTECC = 'playstore-notifications-justnotecc';
 
 // Table
-export const VERIFICATION = 'Verification';
-export const NOTIFICATION = 'Notification';
-export const ACKNOWLEDGEMENT = 'Acknowledgement';
+export const VERIFY_LOG = 'VerifyLog';
+export const NOTIFY_LOG = 'NotifyLog';
+export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
 export const PURCHASE = 'Purchase';
 export const USER = 'User';

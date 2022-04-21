@@ -25,21 +25,21 @@ export const removeTailingSlash = (url) => {
   return url;
 };
 
-export const isObject = val => {
+export const isObject = (val) => {
   return typeof val === 'object' && val !== null;
 };
 
-export const isString = val => {
+export const isString = (val) => {
   return typeof val === 'string' || val instanceof String;
 };
 
-export const getAppId = productId => {
+export const getAppId = (productId) => {
   if (productId === COM_BRACEDOTTO_SUPPORTER) return COM_BRACEDOTTO;
   if (productId === COM_JUSTNOTECC_SUPPORTER) return COM_JUSTNOTECC;
   return null;
 };
 
-export const getAppstoreSecretKey = productId => {
+export const getAppstoreSecretKey = (productId) => {
   const appId = getAppId(productId);
   if (appId === COM_BRACEDOTTO) return appstoreKeys['secretKeyBracedotto'];
   if (appId === COM_JUSTNOTECC) return appstoreKeys['secretKeyJustnotecc'];

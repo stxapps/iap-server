@@ -6,12 +6,13 @@ import { AppleVerifyReceiptErrorCode } from 'types-apple-iap';
 
 import appstore from './appstore';
 import playstore from './playstore';
+import dataApi from './data';
 import {
-  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS,
+  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS, APP_IDS,
   VALID, INVALID, UNKNOWN, ERROR,
 } from './const';
 import {
-  runAsyncWrapper, randomString, removeTailingSlash, isObject, isString,
+  runAsyncWrapper, randomString, removeTailingSlash, isObject, isString, getAppId,
 } from './utils';
 import appstoreKeys from './appstore-keys.json';
 
@@ -77,15 +78,15 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  let purchasedProducts = [];
+  let verifyData = null;
 
   if (source === APPSTORE) {
-    const verifiedResult = await appstore.verifySubscription(productId, token);
-    if (dollabillApple.isFailure(verifiedResult)) {
+    const verifyResult = await appstore.verifySubscription(productId, token);
+    if (dollabillApple.isFailure(verifyResult)) {
       if (![
         AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
         AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
-      ].includes(verifiedResult.code)) {
+      ].includes(verifyResult.code)) {
         // i.e. ServiceUnavailableError
         console.log(`(${logKey}) appstore.verifySubscription errors, return UNKNOWN`);
         results.status = UNKNOWN;
@@ -93,45 +94,47 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
         return;
       }
 
-      console.log(`(${logKey}) verifiedResult is failure, return INVALID`);
+      console.log(`(${logKey}) verifyResult is failure, return INVALID`);
       results.status = INVALID;
       res.send(JSON.stringify(results));
       return;
     }
 
-    purchasedProducts = [verifiedResult.autoRenewableSubscriptions];
-    console.log(`(${logKey}) purchasedProducts: ${JSON.stringify(purchasedProducts)}`);
+    verifyData = verifyResult.autoRenewableSubscriptions;
+    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
     // Acknowledge
 
   }
 
   if (source === PLAYSTORE) {
-    const verifiedResult = await playstore.verifySubscription(productId, token);
-    if (!verifiedResult || !verifiedResult.data || !verifiedResult.data.orderId) {
-      if (verifiedResult.statusCode < 200 || verifiedResult.statusCode > 299) {
+    const verifyResult = await playstore.verifySubscription(productId, token);
+    if (!verifyResult || !verifyResult.data || !verifyResult.data.orderId) {
+      if (verifyResult.status < 200 || verifyResult.status > 299) {
         // i.e. ServiceUnavailableError
-        console.log(`(${logKey}) Server responses ${verifiedResult.statusCode}, return UNKNOWN`);
+        console.log(`(${logKey}) Server responses ${verifyResult.status}, return UNKNOWN`);
         results.status = UNKNOWN;
         res.send(JSON.stringify(results));
         return;
       }
 
-      console.log(`(${logKey}) No orderId in verifiedResult, return INVALID`);
+      console.log(`(${logKey}) No orderId in verifyResult, return INVALID`);
       results.status = INVALID;
       res.send(JSON.stringify(results));
       return;
     }
 
-    purchasedProducts = [verifiedResult.data];
-    console.log(`(${logKey}) purchasedProducts: ${JSON.stringify(purchasedProducts)}`);
+    verifyData = verifyResult.data;
+    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
     // Acknowledge
 
   }
 
-  addVerification(logKey,);
-  updatePurchase(logKey, source, userId, productId, token, purchasedProducts);
+  // parse
+
+  await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyData);
+  await dataApi.addPurchase(logKey, source, userId, productId, token, verifyData);
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /verify finished`);
@@ -154,13 +157,21 @@ app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res)
     return;
   }
 
-  const parsedResult = dollabillApple.parseServerToServerNotification({
+  const notifyResult = dollabillApple.parseServerToServerNotification({
     responseBody: reqBody, sharedSecret: reqBody.password,
   })
-  if (isFailure(parsedResult)) {
+  if (dollabillApple.isFailure(notifyResult)) {
 
   }
 
+  // Acknowledge
+
+
+  await dataApi.saveNotifyLog(logKey, reqBody, data);
+  await dataApi.updatePurchase(logKey, source, userId, productId, token, verifyData);
+  console.log(`(${logKey}) Saved to Datastore`);
+
+  console.log(`(${logKey}) /appstore/notify finished`);
   res.status(200).end();
 }));
 
@@ -214,30 +225,30 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
     return;
   }
 
-  addNotification(logKey, reqBody, data);
+  await dataApi.saveNotifyLog(logKey, reqBody, data);
 
-  const verifiedResult = await playstore.verifySubscription(productId, token);
-  if (!verifiedResult || !verifiedResult.data || !verifiedResult.data.orderId) {
-    if (verifiedResult.statusCode < 200 || verifiedResult.statusCode > 299) {
+  const verifyResult = await playstore.verifySubscription(productId, token);
+  if (!verifyResult || !verifyResult.data || !verifyResult.data.orderId) {
+    if (verifyResult.status < 200 || verifyResult.status > 299) {
       // i.e. ServiceUnavailableError
-      console.log(`(${logKey}) Server responses ${verifiedResult.statusCode}, just end`);
+      console.log(`(${logKey}) Server responses ${verifyResult.status}, just end`);
       res.status(200).end();
       return;
     }
 
-    console.log(`(${logKey}) No orderId in verifiedResult, just end`);
+    console.log(`(${logKey}) No orderId in verifyResult, just end`);
     res.status(200).end();
     return;
   }
 
-  const purchasedProducts = [verifiedResult.data];
-  console.log(`(${logKey}) purchasedProducts: ${JSON.stringify(purchasedProducts)}`);
+  const verifyData = verifyResult.data;
+  console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
   // Acknowledge
 
 
-  addVerification(logKey,);
-  updatePurchase(logKey, source, userId, productId, token, purchasedProducts);
+  await dataApi.saveVerifyLog(logKey,);
+  await dataApi.updatePurchase(logKey, source, userId, productId, token, verifyData);
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /playstore/notify finished`);
@@ -246,13 +257,62 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
 
 app.options('/status', cors(corsOptions));
 app.post('/status', cors(corsOptions), runAsyncWrapper(async (req, res) => {
+  const logKey = randomString(12);
+  console.log(`(${logKey}) /status receives a post request`);
+
+  const results = { status: VALID };
+
+  const referrer = req.get('Referrer');
+  console.log(`(${logKey}) Referrer: ${referrer}`);
+  if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
+    console.log(`(${logKey}) Invalid referrer, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const reqBody = req.body;
+  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody)) {
+    console.log(`(${logKey}) Invalid req.body, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const { source, userId, appId } = reqBody;
+  if (!SOURCES.includes(source)) {
+    console.log(`(${logKey}) Invalid source, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+  if (!isString(userId)) {
+    console.log(`(${logKey}) Invalid userId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+  if (!APP_IDS.includes(appId)) {
+    console.log(`(${logKey}) Invalid appId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
 
   // 1. check whether the user making the function call is authenticated
   // request from real user?
 
   // 
+  const purchases = await dataApi.getPurchases(userId);
+  results.purchases = purchases.filter(purchase => {
+    return getAppId(purchase.productId) === appId;
+  });
 
-  res.status(200).end();
+  // If isForce,
+
+  res.send(JSON.stringify(results));
 }));
 
 // Listen to the App Engine-specified port, or 8088 otherwise
