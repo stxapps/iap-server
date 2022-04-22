@@ -1,7 +1,9 @@
 import { Datastore } from '@google-cloud/datastore';
 
 import {
-  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
+  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER,
+  APPSTORE, PLAYSTORE,
+  ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
 
 const datastore = new Datastore();
@@ -18,7 +20,7 @@ const saveVerifyLog = async (logKey, source, userId, productId, token, verifyRes
       value: JSON.stringify(verifyResult),
       excludeFromIndexes: true,
     },
-    { name: 'updateDT', value: Date.now() },
+    { name: 'updateDate', value: new Date() },
   ];
   await datastore.save({ key: datastore.key([VERIFY_LOG]), data: logData });
 };
@@ -33,7 +35,7 @@ const saveNotifyLog = async (logKey, source, token, notifyResult) => {
       value: JSON.stringify(notifyResult),
       excludeFromIndexes: true,
     },
-    { name: 'updateDT', value: Date.now() },
+    { name: 'updateDate', value: new Date() },
   ];
   await datastore.save({ key: datastore.key([NOTIFY_LOG]), data: logData });
 };
@@ -43,22 +45,21 @@ const saveAcknowledgeLog = () => {
 };
 
 /*const saveAskLog = async () => {
-  // Columns: userId, purchaseId, status, askId, responseId, updateDT
+  // Columns: userId, purchaseId, status, askId, responseId, updateDate
 };*/
 
 const addPurchase = async (logKey, source, userId, productId, token, parsedData) => {
-  // Purchase's columns: source, orderId, productId, token, status, expiryDate, endDate, updateDT
+  // Purchase's columns: source, productId, orderId, token, status, expiryDate, endDate, updateDate
   // User's columns: purchaseId, userId
   // Not now columns: purchaseDate, startDate, trialPeriod, gracePeriod
-  // status: pending, active, active and cancel auto, grace period, active and charge fail
 
   const purchaseId = `${source}_${parsedData.orderId}`;
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, parsedData.orderId, productId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, Date.now()
+      source, productId, parsedData.orderId, token, parsedData.status,
+      parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
   const purchaseUserId = `${purchaseId}_${userId}`;
@@ -67,7 +68,7 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     data: [
       { name: 'purchaseId', value: purchaseId },
       { name: 'userId', value: userId },
-      { name: 'updateDT', value: Date.now() },
+      { name: 'updateDate', value: new Date() },
     ],
   };
 
@@ -95,8 +96,8 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, parsedData.orderId, productId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, Date.now()
+      source, productId, parsedData.orderId, token, parsedData.status,
+      parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
 
@@ -132,8 +133,8 @@ const invalidatePurchase = async (
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, parsedData.orderId, productId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, Date.now()
+      source, productId, parsedData.orderId, token, parsedData.status,
+      parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
 
@@ -142,7 +143,7 @@ const invalidatePurchase = async (
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('purchaseId', oldPurchaseId);
+    query.filter('purchaseId', '=', oldPurchaseId);
     const [oldPurchaseUserEntities] = await transaction.runQuery(query);
 
     const oldPurchaseUserKeys = [], purchaseUserEntities = [];
@@ -155,7 +156,7 @@ const invalidatePurchase = async (
         data: [
           { name: 'purchaseId', value: purchaseId },
           { name: 'userId', value: entity.userId },
-          { name: 'updateDT', value: Date.now() },
+          { name: 'updateDate', value: new Date() },
         ],
       };
       purchaseUserEntities.push(purchaseUserEntity);
@@ -182,7 +183,7 @@ const getPurchase = async (source, orderId) => {
     const [purchaseEntity] = await transaction.get(purchaseKey);
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('purchaseId', purchaseId);
+    query.filter('purchaseId', '=', purchaseId);
     const [purchaseUserEntities] = await transaction.runQuery(query);
 
     await transaction.commit();
@@ -208,7 +209,7 @@ const getPurchases = async (userId) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('userId', userId);
+    query.filter('userId', '=', userId);
     const [purchaseUserEntities] = await transaction.runQuery(query);
 
     const purchaseIds = [];
@@ -230,8 +231,8 @@ const getPurchases = async (userId) => {
 
 /*const getExpiredSubscriptions = () => new Promise((resolve, reject) => {
   const query = datastore.createQuery(PURCHASE);
-  query.filter('expiryDT<', Date.now());
-  query.filter('status', ACTIVE);
+  query.filter('expiryDate', '<', new Date());
+  query.filter('status', '=', ACTIVE);
   query.limit(800);
   datastore.runQuery(query, (err, entities) => {
     if (err) reject(err);
@@ -245,30 +246,30 @@ const expireSubscriptions = async () => {
 };*/
 
 const derivePurchaseEntityData = (
-  source, orderId, productId, token, status, expiryDate, endDate, updateDT,
+  source, productId, orderId, token, status, expiryDate, endDate, updateDate,
 ) => {
   return [
     { name: 'source', value: source },
-    { name: 'orderId', value: orderId },
     { name: 'productId', value: productId },
+    { name: 'orderId', value: orderId },
     { name: 'token', value: token },
     { name: 'status', value: status },
     { name: 'expiryDate', value: expiryDate },
     { name: 'endDate', value: endDate },
-    { name: 'updateDT', value: updateDT },
+    { name: 'updateDate', value: updateDate },
   ];
 };
 
 const derivePurchaseData = (purchaseEntity) => {
   return {
     source: purchaseEntity.source,
-    orderId: purchaseEntity.orderId,
     productId: purchaseEntity.productId,
+    orderId: purchaseEntity.orderId,
     token: purchaseEntity.token,
     status: purchaseEntity.status,
     expiryDate: purchaseEntity.expiryDate,
     endDate: purchaseEntity.endDate,
-    updateDT: purchaseEntity.updateDT,
+    updateDate: purchaseEntity.updateDate,
   };
 };
 
@@ -276,42 +277,92 @@ const parseData = (logKey, source, data) => {
   // Parse verifyData or notifyData to parsedData
   const parsedData = {};
   if (source === APPSTORE) {
+    // expireDate does not change if the subscription is cancelled or goes into a grace period. It only changes if the subscription gets renewed or restored.
+    // currentEndDate is a date that is calculated for you by evaluating the expires date, if there was a cancellation stopping the subscription early, or if the subscription is in a grace period and you should extend access.
+    // currentEndDate is expireDate excluding grace period, then in grace period, it'll be changed to gracePeriodExpireDate
     parsedData.productId = data.currentProductId;
     parsedData.orderId = data.originalTransactionId;
-
-
-    parsedData.status = data.status;
-
-
-
+    parsedData.status = parseStatus(logKey, source, data);
     parsedData.expiryDate = data.expireDate;
-    parsedData.endData = data.currentEndDate;
+    parsedData.endDate = data.currentEndDate;
   } else if (source === PLAYSTORE) {
+    // expiryDate is already included grace period
     // If a subscription suffix is present (..#) extract the orderId.
     let orderId = data.orderId;
     const orderIdMatch = /^(.+)?[.]{2}[0-9]+$/g.exec(orderId);
     if (orderIdMatch) orderId = orderIdMatch[1];
     console.log(`(logKey) Order id: ${data.orderId} has a suffix, new order id: ${orderId}`);
 
+    const expiryDate = new Date(parseInt(data.expiryTimeMillis || '0', 10));
+
     parsedData.productId = null;
     parsedData.orderId = orderId;
-
-
-    parsedData.status = data.paymentState;
-
-
-    parsedData.expiryDate = parseInt(data.expiryTimeMillis ?? "0", 10);
-
+    parsedData.status = parseStatus(logKey, source, data);
+    parsedData.expiryDate = expiryDate;
+    parsedData.endDate = expiryDate;
   } else throw new Error(`Invalid source: ${source}`);
+
+  const now = Date.now();
+  const endDT = parsedData.endDate.getTime();
+  if (now <= endDT && ![ACTIVE, NO_RENEW, GRACE].includes(parsedData.status)) {
+    console.log(`(logKey) Found future endDate with inconsistent status: ${parsedData.status}`);
+  }
+  if (now > endDT && ![ON_HOLD, PAUSED, EXPIRED].includes(parsedData.status)) {
+    console.log(`(logKey) Found past endDate with inconsistent status: ${parsedData.status}`);
+  }
 
   return parsedData;
 };
 
 const parseStatus = (logKey, source, data) => {
+  const now = Date.now();
+
+  // NO_RENEW or EXPIRED can have several reasons: user cancel, charge back/refund, system/admin revoke, billing issue, payment issue and give up trying, Customer did not agree to price increase, Product not available for purchase, Unknown error
   if (source === APPSTORE) {
+    // https://levibostian.github.io/dollabill-apple/api/globals.html#autorenewablesubscriptionstatus
+    const endDT = data.currentEndDate.getTime();
 
+    if (data.status === 'active' && data.willAutoRenew) {
+      return ACTIVE;
+    } else if (data.status === 'active' && !data.willAutoRenew) {
+      return NO_RENEW;
+    } else if (data.status === 'grace_period') {
+      return GRACE
+    } else if (now > endDT && data.status === 'billing_retry_period') {
+      return ON_HOLD;
+    } else if (now > endDT && (
+      data.status === 'voluntary_cancel' ||
+      data.status === 'involuntary_cancel' ||
+      data.status === 'refunded' ||
+      data.status === 'upgraded'
+    )) {
+      return EXPIRED;
+    }
+
+    console.log(`(logKey) Unknown status`);
+    return UNKNOWN;
   } else if (source === PLAYSTORE) {
+    // https://developer.android.com/google/play/billing/subscriptions
+    // paymentState: 0. Payment pending 1. Payment received 2. Free trial 3. Pending deferred upgrade/downgrade
+    const expiryDT = parseInt(data.expiryTimeMillis || '0', 10);
+    const isPaymentState123 = [1, 2, 3].includes(data.paymentState);
 
+    if (now <= expiryDT && isPaymentState123 && data.autoRenewing) {
+      return ACTIVE;
+    } else if (now <= expiryDT && isPaymentState123 && !data.autoRenewing) {
+      return NO_RENEW;
+    } else if (now <= expiryDT && data.paymentState === 0 && data.autoRenewing) {
+      return GRACE;
+    } else if (now > expiryDT && data.paymentState === 0 && data.autoRenewing) {
+      return ON_HOLD;
+    } else if (now > expiryDT && isPaymentState123 && data.autoRenewing) {
+      return PAUSED;
+    } else if (now > expiryDT && !data.autoRenewing) {
+      return EXPIRED;
+    }
+
+    console.log(`(logKey) Unknown status`);
+    return UNKNOWN;
   } else throw new Error(`Invalid source: ${source}`);
 };
 

@@ -20,16 +20,19 @@ import appstoreKeys from './appstore-keys.json';
 const app = express();
 app.use(express.json());
 
-const corsOptions = {
+const cCorsOptions = {
   'origin': ALLOWED_ORIGINS,
+}
+const sCorsOptions = {
+  'origin': '*',
 }
 
 app.get('/', (_req, res) => {
   res.send('Welcome to <a href="https://www.stxapps.com">STX Apps</a>\'s server!');
 });
 
-app.options('/verify', cors(corsOptions));
-app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
+app.options('/verify', cors(cCorsOptions));
+app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /appstore/verify receives a post request`);
 
@@ -47,7 +50,7 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
   const reqBody = req.body;
   console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
   if (!isObject(reqBody)) {
-    console.log(`(${logKey}) Invalid req.body, return ERROR`);
+    console.log(`(${logKey}) Invalid reqBody, return ERROR`);
     results.status = ERROR;
     res.send(JSON.stringify(results));
     return;
@@ -106,10 +109,13 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
 
     const subscriptions = verifyResult.autoRenewableSubscriptions;
     if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-
+      console.log(`(${logKey}) No subscription found, return INVALID`);
+      results.status = INVALID;
+      res.send(JSON.stringify(results));
+      return;
     }
     if (subscriptions.length !== 1) {
-
+      console.log(`(${logKey}) Found too many subscriptions, use only the first`);
     }
 
     verifyData = subscriptions[0];
@@ -141,7 +147,9 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
     console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
     // Acknowledge
+    if (verifyData.acknowledgementState === 0) {
 
+    }
   }
 
   await dataApi.addPurchase(
@@ -154,13 +162,18 @@ app.post('/verify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
   res.send(JSON.stringify(results));
 }));
 
-app.options('/appstore/notify', cors(corsOptions));
-app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
+app.options('/appstore/notify', cors(sCorsOptions));
+app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /appstore/notify receives a post request`);
 
   const reqBody = req.body;
   console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody)) {
+    console.log(`(${logKey}) Invalid reqBody, just end`);
+    res.status(200).end();
+    return;
+  }
 
   if (![
     appstoreKeys['secretKeyBracedotto'], appstoreKeys['secretKeyJustnotecc'],
@@ -174,7 +187,9 @@ app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res)
     responseBody: reqBody, sharedSecret: reqBody.password,
   })
   if (dollabillApple.isFailure(notifyResult)) {
-
+    // i.e. NotValidNotification
+    console.log(`(${logKey}) Not valid notification, just end`);
+    res.status(200).end();
     return;
   }
   await dataApi.saveNotifyLog(
@@ -183,10 +198,12 @@ app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res)
 
   const subscriptions = notifyResult.autoRenewableSubscriptions;
   if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-
+    console.log(`(${logKey}) No subscription found, just end`);
+    res.status(200).end();
+    return;
   }
   if (subscriptions.length !== 1) {
-
+    console.log(`(${logKey}) Found too many subscriptions, use only the first`);
   }
 
   const notifyData = subscriptions[0];
@@ -207,14 +224,14 @@ app.post('/appstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res)
   res.status(200).end();
 }));
 
-app.options('/playstore/notify', cors(corsOptions));
-app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res) => {
+app.options('/playstore/notify', cors(sCorsOptions));
+app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /playstore/notify receives a post request`);
 
   const reqBody = req.body;
   console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
-  if (!reqBody.subscription || !reqBody.message) {
+  if (!isObject(reqBody) || !reqBody.subscription || !reqBody.message) {
     console.log(`(${logKey}) Invalid reqBody, just end`);
     res.status(200).end();
     return;
@@ -237,8 +254,8 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
     return;
   }
 
-  if (!data.subscriptionNotification) {
-    console.log(`(${logKey}) No subscriptionNotification, just end`);
+  if (!data.subscriptionNotification || !isObject(data.subscriptionNotification)) {
+    console.log(`(${logKey}) No or invalid subscriptionNotification, just end`);
     res.status(200).end();
     return;
   }
@@ -279,22 +296,27 @@ app.post('/playstore/notify', cors(corsOptions), runAsyncWrapper(async (req, res
   console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
   // Acknowledge
+  if (verifyData.acknowledgementState === 0) {
 
+  }
 
   // Invalidate or update!!!
+  if (verifyData.linkedPurchaseToken) {
 
-  await dataApi.updatePurchase(
-    logKey, PLAYSTORE, productId, token,
-    dataApi.parseData(logKey, PLAYSTORE, verifyData)
-  );
+  } else {
+    await dataApi.updatePurchase(
+      logKey, PLAYSTORE, productId, token,
+      dataApi.parseData(logKey, PLAYSTORE, verifyData)
+    );
+  }
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /playstore/notify finished`);
   res.status(200).end();
 }));
 
-app.options('/status', cors(corsOptions));
-app.post('/status', cors(corsOptions), runAsyncWrapper(async (req, res) => {
+app.options('/status', cors(cCorsOptions));
+app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /status receives a post request`);
 
@@ -312,7 +334,7 @@ app.post('/status', cors(corsOptions), runAsyncWrapper(async (req, res) => {
   const reqBody = req.body;
   console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
   if (!isObject(reqBody)) {
-    console.log(`(${logKey}) Invalid req.body, return ERROR`);
+    console.log(`(${logKey}) Invalid reqBody, return ERROR`);
     results.status = ERROR;
     res.send(JSON.stringify(results));
     return;
@@ -338,9 +360,9 @@ app.post('/status', cors(corsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-
   // 1. check whether the user making the function call is authenticated
   // request from real user?
+
 
   // 
   const purchases = await dataApi.getPurchases(userId);

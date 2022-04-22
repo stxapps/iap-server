@@ -53,9 +53,10 @@ export const PURCHASE = 'Purchase';
 export const PURCHASE_USER = 'PurchaseUser';
 
 // Status
-export const PENDING = 'PENDING'; // Payment pending
-export const ACTIVE = 'ACTIVE'; // Payment received
-export const FREE_TRIAL = 'FREE_TRIAL';
-
-export const EXPIRED = 'EXPIRED';
-export const CANCELLED = 'CANCELLED';
+export const ACTIVE = 'Active';
+export const NO_RENEW = 'NoRenew';
+export const GRACE = 'GracePeriod';
+export const ON_HOLD = 'OnHold';
+export const PAUSED = 'Paused';
+export const EXPIRED = 'Expired';
+//export const UNKNOWN = 'UNKNOWN';
