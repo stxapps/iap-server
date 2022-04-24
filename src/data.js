@@ -53,13 +53,13 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
   // User's columns: purchaseId, userId
   // Not now columns: purchaseDate, startDate, trialPeriod, gracePeriod
 
-  const purchaseId = `${source}_${parsedData.orderId}`;
+  const purchaseId = getPurchaseId(logKey, source, token, parsedData.originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, productId, parsedData.orderId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, new Date()
+      source, productId, parsedData.orderId, token, parsedData.originalOrderId,
+      parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
   const purchaseUserId = `${purchaseId}_${userId}`;
@@ -89,15 +89,15 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
 
 const updatePurchase = async (logKey, source, productId, token, parsedData) => {
   if (!productId) productId = parsedData.productId;
-  if (!productId) throw new Error(`Invalid productId: ${productId}`);
+  if (!productId) throw new Error(`(${logKey}) Invalid productId: ${productId}`);
 
-  const purchaseId = `${source}_${parsedData.orderId}`;
+  const purchaseId = getPurchaseId(logKey, source, token, parsedData.originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, productId, parsedData.orderId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, new Date()
+      source, productId, parsedData.orderId, token, parsedData.originalOrderId,
+      parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
 
@@ -123,18 +123,27 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
 };*/
 
 const invalidatePurchase = async (
-  logKey, oldSource, oldOrderId, source, productId, token, parsedData
+  logKey, source, productId, token, linkedToken, parsedData
 ) => {
-  const oldPurchaseId = `${oldSource}_${oldOrderId}`;
+  if (source !== PLAYSTORE) {
+    throw new Error(`(${logKey}) Only support PLAYSTORE for now`);
+  }
+  if (!productId) throw new Error(`(${logKey}) Invalid productId: ${productId}`);
+
+  // Idempotent!
+
+  const oldPurchaseId = getPurchaseId(
+    logKey, source, linkedToken, parsedData.originalOrderId
+  );
   const oldPurchaseKey = datastore.key([PURCHASE, oldPurchaseId]);
 
-  const purchaseId = `${source}_${parsedData.orderId}`;
+  const purchaseId = getPurchaseId(logKey, source, token, parsedData.originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
-      source, productId, parsedData.orderId, token, parsedData.status,
-      parsedData.expiryDate, parsedData.endDate, new Date()
+      source, productId, parsedData.orderId, token, parsedData.originalOrderId,
+      parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
 
@@ -172,8 +181,8 @@ const invalidatePurchase = async (
   }
 };
 
-const getPurchase = async (source, orderId) => {
-  const purchaseId = `${source}_${orderId}`;
+const getPurchase = async (logKey, source, token, originalOrderId) => {
+  const purchaseId = getPurchaseId(logKey, source, token, originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
 
   const transaction = datastore.transaction({ readOnly: true });
@@ -246,13 +255,15 @@ const expireSubscriptions = async () => {
 };*/
 
 const derivePurchaseEntityData = (
-  source, productId, orderId, token, status, expiryDate, endDate, updateDate,
+  source, productId, orderId, token, originalOrderId, status,
+  expiryDate, endDate, updateDate,
 ) => {
   return [
     { name: 'source', value: source },
     { name: 'productId', value: productId },
     { name: 'orderId', value: orderId },
     { name: 'token', value: token },
+    { name: 'originalOrderId', value: originalOrderId },
     { name: 'status', value: status },
     { name: 'expiryDate', value: expiryDate },
     { name: 'endDate', value: endDate },
@@ -266,6 +277,7 @@ const derivePurchaseData = (purchaseEntity) => {
     productId: purchaseEntity.productId,
     orderId: purchaseEntity.orderId,
     token: purchaseEntity.token,
+    originalOrderId: purchaseEntity.originalOrderId,
     status: purchaseEntity.status,
     expiryDate: purchaseEntity.expiryDate,
     endDate: purchaseEntity.endDate,
@@ -281,26 +293,22 @@ const parseData = (logKey, source, data) => {
     // currentEndDate is a date that is calculated for you by evaluating the expires date, if there was a cancellation stopping the subscription early, or if the subscription is in a grace period and you should extend access.
     // currentEndDate is expireDate excluding grace period, then in grace period, it'll be changed to gracePeriodExpireDate
     parsedData.productId = data.currentProductId;
-    parsedData.orderId = data.originalTransactionId;
+    parsedData.orderId = data.latestExpireDateTransaction.transactionId;
+    parsedData.originalOrderId = data.originalTransactionId;
     parsedData.status = parseStatus(logKey, source, data);
     parsedData.expiryDate = data.expireDate;
     parsedData.endDate = data.currentEndDate;
   } else if (source === PLAYSTORE) {
     // expiryDate is already included grace period
-    // If a subscription suffix is present (..#) extract the orderId.
-    let orderId = data.orderId;
-    const orderIdMatch = /^(.+)?[.]{2}[0-9]+$/g.exec(orderId);
-    if (orderIdMatch) orderId = orderIdMatch[1];
-    console.log(`(logKey) Order id: ${data.orderId} has a suffix, new order id: ${orderId}`);
-
     const expiryDate = new Date(parseInt(data.expiryTimeMillis || '0', 10));
 
     parsedData.productId = null;
-    parsedData.orderId = orderId;
+    parsedData.orderId = data.orderId;
+    parsedData.originalOrderId = null;
     parsedData.status = parseStatus(logKey, source, data);
     parsedData.expiryDate = expiryDate;
     parsedData.endDate = expiryDate;
-  } else throw new Error(`Invalid source: ${source}`);
+  } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
   const now = Date.now();
   const endDT = parsedData.endDate.getTime();
@@ -363,7 +371,13 @@ const parseStatus = (logKey, source, data) => {
 
     console.log(`(logKey) Unknown status`);
     return UNKNOWN;
-  } else throw new Error(`Invalid source: ${source}`);
+  } else throw new Error(`(${logKey}) Invalid source: ${source}`);
+};
+
+const getPurchaseId = (logKey, source, token, originalOrderId) => {
+  if (source === APPSTORE) return `${source}_${originalOrderId}`;
+  if (source === PLAYSTORE) return `${source}_${token}`;
+  throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
 
 const data = {

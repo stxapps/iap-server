@@ -123,34 +123,45 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
     // Acknowledge
 
-  }
 
-  if (source === PLAYSTORE) {
-    const verifyResult = await playstore.verifySubscription(productId, token);
-    if (!verifyResult || !verifyResult.data || !verifyResult.data.orderId) {
-      if (verifyResult.status < 200 || verifyResult.status > 299) {
-        // i.e. ServiceUnavailableError
-        console.log(`(${logKey}) Server responses ${verifyResult.status}, return UNKNOWN`);
+  } else if (source === PLAYSTORE) {
+    try {
+      const verifyResult = await playstore.verifySubscription(productId, token);
+      if (!verifyResult || !verifyResult.data) {
+        console.log(`(${logKey}) Should not reach here as no data should throw an error, return UNKNOWN`);
         results.status = UNKNOWN;
         res.send(JSON.stringify(results));
         return;
       }
 
-      console.log(`(${logKey}) No orderId in verifyResult, return INVALID`);
+      await dataApi.saveVerifyLog(
+        logKey, source, userId, productId, token, verifyResult
+      );
+
+      verifyData = verifyResult.data;
+      console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
+    } catch (e) {
+      if (
+        !e.response || !e.response.status || ![400, 410].includes(e.response.status)
+      ) {
+        // i.e. ServiceUnavailableError
+        console.log(`(${logKey}) Server responses ${e.response.status}, return UNKNOWN`);
+        results.status = UNKNOWN;
+        res.send(JSON.stringify(results));
+        return;
+      }
+
+      console.log(`(${logKey}) Server responses ${e.response.status}, return INVALID`);
       results.status = INVALID;
       res.send(JSON.stringify(results));
       return;
     }
-    await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
-
-    verifyData = verifyResult.data;
-    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
     // Acknowledge
     if (verifyData.acknowledgementState === 0) {
 
     }
-  }
+  } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
   await dataApi.addPurchase(
     logKey, source, userId, productId, token,
@@ -277,32 +288,37 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
   reqBody.message.data = data;
   await dataApi.saveNotifyLog(logKey, PLAYSTORE, token, reqBody);
 
-  const verifyResult = await playstore.verifySubscription(productId, token);
-  if (!verifyResult || !verifyResult.data || !verifyResult.data.orderId) {
-    if (verifyResult.status < 200 || verifyResult.status > 299) {
-      // i.e. ServiceUnavailableError
-      console.log(`(${logKey}) Server responses ${verifyResult.status}, just end`);
+  let verifyData = null;
+
+  try {
+    const verifyResult = await playstore.verifySubscription(productId, token);
+    if (!verifyResult || !verifyResult.data) {
+      console.log(`(${logKey}) Should not reach here, no data should throw an error, just end`);
       res.status(200).end();
       return;
     }
 
-    console.log(`(${logKey}) No orderId in verifyResult, just end`);
+    await dataApi.saveVerifyLog(logKey, PLAYSTORE, null, productId, token, verifyResult);
+
+    verifyData = verifyResult.data;
+    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
+  } catch (e) {
+    // i.e. ServiceUnavailableError
+    console.log(`(${logKey}) Server responses ${e.response.status}, just end`);
     res.status(200).end();
     return;
   }
-  await dataApi.saveVerifyLog(logKey, PLAYSTORE, null, productId, token, verifyResult);
-
-  const verifyData = verifyResult.data;
-  console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
   // Acknowledge
   if (verifyData.acknowledgementState === 0) {
 
   }
 
-  // Invalidate or update!!!
   if (verifyData.linkedPurchaseToken) {
-
+    await dataApi.invalidatePurchase(
+      logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
+      dataApi.parseData(logKey, PLAYSTORE, verifyData)
+    );
   } else {
     await dataApi.updatePurchase(
       logKey, PLAYSTORE, productId, token,
@@ -340,7 +356,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const { source, userId, appId } = reqBody;
+  const { source, userId, appId, doForce } = reqBody;
   if (!SOURCES.includes(source)) {
     console.log(`(${logKey}) Invalid source, return ERROR`);
     results.status = ERROR;
@@ -369,8 +385,125 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   results.purchases = purchases.filter(purchase => {
     return getAppId(purchase.productId) === appId;
   });
+  if (!doForce) {
+    console.log(`(${logKey}) /status finished`);
+    res.send(JSON.stringify(results));
+  }
+  if (purchases.length === 0) {
+    console.log(`(${logKey}) doForce: ${doForce} but empty purchases, return INVALID`);
+    results.status = INVALID;
+    res.send(JSON.stringify(results));
+  }
 
-  // If isForce,
+  for (const purchase of purchases) {
+    const { source, productId, token } = purchase;
+
+    let verifyData = null;
+
+    if (source === APPSTORE) {
+      const verifyResult = await appstore.verifySubscription(productId, token);
+      if (dollabillApple.isFailure(verifyResult)) {
+        // @ts-ignore
+        const appleErrorCode = verifyResult.appleErrorCode;
+        if (!appleErrorCode || ![
+          AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
+          AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
+        ].includes(appleErrorCode)) {
+          // i.e. ServiceUnavailableError
+          console.log(`(${logKey}) appstore.verifySubscription errors, return UNKNOWN`);
+          results.status = UNKNOWN;
+          res.send(JSON.stringify(results));
+          return;
+        }
+
+        console.log(`(${logKey}) verifyResult is failure, return INVALID`);
+        results.status = INVALID;
+        res.send(JSON.stringify(results));
+        return;
+      }
+      await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
+
+      const subscriptions = verifyResult.autoRenewableSubscriptions;
+      if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
+        console.log(`(${logKey}) No subscription found, return INVALID`);
+        results.status = INVALID;
+        res.send(JSON.stringify(results));
+        return;
+      }
+      if (subscriptions.length !== 1) {
+        console.log(`(${logKey}) Found too many subscriptions, use only the first`);
+      }
+
+      verifyData = subscriptions[0];
+      console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
+
+      // Acknowledge
+
+
+      await dataApi.updatePurchase(
+        logKey, APPSTORE, null, verifyResult.latestReceipt,
+        dataApi.parseData(logKey, APPSTORE, verifyData)
+      );
+      console.log(`(${logKey}) Saved to Datastore`);
+    }
+
+    if (source === PLAYSTORE) {
+      try {
+        const verifyResult = await playstore.verifySubscription(productId, token);
+        if (!verifyResult || !verifyResult.data) {
+          console.log(`(${logKey}) Should not reach here, no data should throw an error, return UNKNOWN`);
+          results.status = UNKNOWN;
+          res.send(JSON.stringify(results));
+          return;
+        }
+
+        await dataApi.saveVerifyLog(
+          logKey, source, userId, productId, token, verifyResult
+        );
+
+        verifyData = verifyResult.data;
+        console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
+      } catch (e) {
+        if (
+          !e.response || !e.response.status || ![400, 410].includes(e.response.status)
+        ) {
+          // i.e. ServiceUnavailableError
+          console.log(`(${logKey}) Server responses ${e.response.status}, return UNKNOWN`);
+          results.status = UNKNOWN;
+          res.send(JSON.stringify(results));
+          return;
+        }
+
+        console.log(`(${logKey}) Server responses ${e.response.status}, return INVALID`);
+        results.status = INVALID;
+        res.send(JSON.stringify(results));
+        return;
+      }
+
+      // Acknowledge
+      if (verifyData.acknowledgementState === 0) {
+
+      }
+
+      if (verifyData.linkedPurchaseToken) {
+        await dataApi.invalidatePurchase(
+          logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
+          dataApi.parseData(logKey, PLAYSTORE, verifyData)
+        );
+      } else {
+        await dataApi.updatePurchase(
+          logKey, PLAYSTORE, productId, token,
+          dataApi.parseData(logKey, PLAYSTORE, verifyData)
+        );
+      }
+      console.log(`(${logKey}) Saved to Datastore`);
+    }
+  }
+
+  const updatedPurchases = await dataApi.getPurchases(userId);
+  results.purchases = updatedPurchases.filter(purchase => {
+    return getAppId(purchase.productId) === appId;
+  });
 
   res.send(JSON.stringify(results));
 }));
