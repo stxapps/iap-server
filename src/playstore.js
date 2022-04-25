@@ -4,14 +4,12 @@ import { google } from 'googleapis';
 
 import dataApi from './data';
 import { PLAYSTORE, VALID, INVALID, UNKNOWN } from './const';
-import { getAppId } from './utils';
+import { getAppId, sleep } from './utils';
 
 const androidPublisher = google.androidpublisher('v3');
 let didBindAuthClient = false;
 
 const bindAuthClient = async () => {
-  if (didBindAuthClient) return;
-
   const auth = new google.auth.GoogleAuth({
     keyFile: 'src/playstore-service-account.json',
     scopes: ['https://www.googleapis.com/auth/cloud-platform'],
@@ -21,11 +19,26 @@ const bindAuthClient = async () => {
 
   didBindAuthClient = true;
 };
+bindAuthClient();
+
+const initAuthClient = async () => {
+  let waits = [200, 500, 1000, 1500, 2000];
+  for (const wait of waits) {
+    if (didBindAuthClient) return true;
+    await sleep(wait);
+  }
+  return didBindAuthClient;
+};
 
 const verifySubscription = async (logKey, userId, productId, token) => {
+  const initResult = await initAuthClient();
+  if (!initResult) {
+    console.log(`(${logKey}) In playstore, auth client can't be inited, return UNKNOWN`);
+    return { status: UNKNOWN, verifyData: null };
+  }
+
   let verifyResult = null;
   try {
-    await bindAuthClient();
     verifyResult = await androidPublisher.purchases.subscriptions.get({
       packageName: getAppId(productId),
       subscriptionId: productId,

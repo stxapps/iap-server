@@ -45,3 +45,5 @@ export const getAppstoreSecretKey = (productId) => {
   if (appId === COM_JUSTNOTECC) return appstoreKeys['secretKeyJustnotecc'];
   return null;
 };
+
+export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
