@@ -1,14 +1,15 @@
 import { Datastore } from '@google-cloud/datastore';
 
 import {
-  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER,
-  APPSTORE, PLAYSTORE,
+  VERIFY_LOG, NOTIFY_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
 
 const datastore = new Datastore();
 
-const saveVerifyLog = async (logKey, source, userId, productId, token, verifyResult) => {
+const saveVerifyLog = async (
+  logKey, source, userId, productId, token, verifyResult,
+) => {
   const logData = [
     { name: 'logKey', value: logKey },
     { name: 'source', value: source },
@@ -25,11 +26,12 @@ const saveVerifyLog = async (logKey, source, userId, productId, token, verifyRes
   await datastore.save({ key: datastore.key([VERIFY_LOG]), data: logData });
 };
 
-const saveNotifyLog = async (logKey, source, token, notifyResult) => {
+const saveNotifyLog = async (logKey, source, token, originalOrderId, notifyResult) => {
   const logData = [
     { name: 'logKey', value: logKey },
     { name: 'source', value: source },
     { name: 'token', value: token },
+    { name: 'originalOrderId', value: originalOrderId },
     {
       name: 'notifyResult',
       value: JSON.stringify(notifyResult),
@@ -38,10 +40,6 @@ const saveNotifyLog = async (logKey, source, token, notifyResult) => {
     { name: 'updateDate', value: new Date() },
   ];
   await datastore.save({ key: datastore.key([NOTIFY_LOG]), data: logData });
-};
-
-const saveAcknowledgeLog = () => {
-
 };
 
 /*const saveAskLog = async () => {
@@ -381,7 +379,7 @@ const getPurchaseId = (logKey, source, token, originalOrderId) => {
 };
 
 const data = {
-  saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
+  saveVerifyLog, saveNotifyLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
   parseData,
 };

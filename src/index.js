@@ -1,15 +1,13 @@
 // Inpired by https://codelabs.developers.google.com/codelabs/flutter-in-app-purchases#8
 import express from 'express';
 import cors from 'cors';
-import dollabillApple from 'dollabill-apple';
-import { AppleVerifyReceiptErrorCode } from 'types-apple-iap';
 
 import appstore from './appstore';
 import playstore from './playstore';
 import dataApi from './data';
 import {
   ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS, APP_IDS,
-  VALID, INVALID, UNKNOWN, ERROR,
+  VALID, ERROR,
 } from './const';
 import {
   runAsyncWrapper, randomString, removeTailingSlash, isObject, isString,
@@ -82,92 +80,47 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  let verifyData = null;
-
   if (source === APPSTORE) {
-    const verifyResult = await appstore.verifySubscription(productId, token);
-    if (dollabillApple.isFailure(verifyResult)) {
-      // @ts-ignore
-      const appleErrorCode = verifyResult.appleErrorCode;
-      if (!appleErrorCode || ![
-        AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
-        AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
-      ].includes(appleErrorCode)) {
-        // i.e. ServiceUnavailableError
-        console.log(`(${logKey}) appstore.verifySubscription errors, return UNKNOWN`);
-        results.status = UNKNOWN;
-        res.send(JSON.stringify(results));
-        return;
-      }
+    const verifyResult = await appstore.verifySubscription(
+      logKey, userId, productId, token,
+    );
 
-      console.log(`(${logKey}) verifyResult is failure, return INVALID`);
-      results.status = INVALID;
+    const { status, latestReceipt, verifyData } = verifyResult;
+    results.status = status;
+    if (results.status !== VALID) {
       res.send(JSON.stringify(results));
       return;
     }
-    await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
 
-    const subscriptions = verifyResult.autoRenewableSubscriptions;
-    if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-      console.log(`(${logKey}) No subscription found, return INVALID`);
-      results.status = INVALID;
-      res.send(JSON.stringify(results));
-      return;
-    }
-    if (subscriptions.length !== 1) {
-      console.log(`(${logKey}) Found too many subscriptions, use only the first`);
-    }
-
-    verifyData = subscriptions[0];
-    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-
-    // Acknowledge
-
-
+    const parsedData = dataApi.parseData(logKey, source, verifyData);
+    await dataApi.addPurchase(
+      logKey, source, userId, productId, latestReceipt, parsedData,
+    );
+    console.log(`(${logKey}) Saved to Datastore`);
   } else if (source === PLAYSTORE) {
-    try {
-      const verifyResult = await playstore.verifySubscription(productId, token);
-      if (!verifyResult || !verifyResult.data) {
-        console.log(`(${logKey}) Should not reach here as no data should throw an error, return UNKNOWN`);
-        results.status = UNKNOWN;
-        res.send(JSON.stringify(results));
-        return;
-      }
+    const verifyResult = await playstore.verifySubscription(
+      logKey, userId, productId, token,
+    );
 
-      await dataApi.saveVerifyLog(
-        logKey, source, userId, productId, token, verifyResult
-      );
-
-      verifyData = verifyResult.data;
-      console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-    } catch (e) {
-      if (
-        !e.response || !e.response.status || ![400, 410].includes(e.response.status)
-      ) {
-        // i.e. ServiceUnavailableError
-        console.log(`(${logKey}) Server responses ${e.response.status}, return UNKNOWN`);
-        results.status = UNKNOWN;
-        res.send(JSON.stringify(results));
-        return;
-      }
-
-      console.log(`(${logKey}) Server responses ${e.response.status}, return INVALID`);
-      results.status = INVALID;
+    const { status, verifyData } = verifyResult;
+    results.status = status;
+    if (results.status !== VALID) {
       res.send(JSON.stringify(results));
       return;
     }
 
-    // Acknowledge
-    if (verifyData.acknowledgementState === 0) {
-
+    const parsedData = dataApi.parseData(logKey, source, verifyData);
+    if (verifyData.linkedPurchaseToken) {
+      await dataApi.invalidatePurchase(
+        logKey, source, productId, token, verifyData.linkedPurchaseToken, parsedData,
+      );
+      console.log(`(${logKey}) Called invalidatePurchase instead of addPurchase`);
     }
+    await dataApi.addPurchase(
+      logKey, source, userId, productId, token, parsedData,
+    );
+    console.log(`(${logKey}) Saved to Datastore`);
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
-
-  await dataApi.addPurchase(
-    logKey, source, userId, productId, token,
-    dataApi.parseData(logKey, source, verifyData)
-  );
-  console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /verify finished`);
   res.send(JSON.stringify(results));
@@ -194,41 +147,16 @@ app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res
     return;
   }
 
-  const notifyResult = dollabillApple.parseServerToServerNotification({
-    responseBody: reqBody, sharedSecret: reqBody.password,
-  })
-  if (dollabillApple.isFailure(notifyResult)) {
-    // i.e. NotValidNotification
-    console.log(`(${logKey}) Not valid notification, just end`);
+  const notifyResult = await appstore.verifyNotification(logKey, reqBody);
+
+  const { status, latestReceipt, notifyData } = notifyResult;
+  if (status !== VALID) {
     res.status(200).end();
     return;
   }
-  await dataApi.saveNotifyLog(
-    logKey, APPSTORE, notifyResult.latestReceipt, notifyResult,
-  );
 
-  const subscriptions = notifyResult.autoRenewableSubscriptions;
-  if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-    console.log(`(${logKey}) No subscription found, just end`);
-    res.status(200).end();
-    return;
-  }
-  if (subscriptions.length !== 1) {
-    console.log(`(${logKey}) Found too many subscriptions, use only the first`);
-  }
-
-  const notifyData = subscriptions[0];
-  console.log(`(${logKey}) notifyData: ${JSON.stringify(notifyData)}`);
-
-  // Acknowledge
-
-
-
-
-  await dataApi.updatePurchase(
-    logKey, APPSTORE, null, notifyResult.latestReceipt,
-    dataApi.parseData(logKey, APPSTORE, notifyData)
-  );
+  const parsedData = dataApi.parseData(logKey, APPSTORE, notifyData);
+  await dataApi.updatePurchase(logKey, APPSTORE, null, latestReceipt, parsedData);
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /appstore/notify finished`);
@@ -286,43 +214,27 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
   }
 
   reqBody.message.data = data;
-  await dataApi.saveNotifyLog(logKey, PLAYSTORE, token, reqBody);
+  await dataApi.saveNotifyLog(logKey, PLAYSTORE, token, null, reqBody);
 
-  let verifyData = null;
+  const verifyResult = await playstore.verifySubscription(
+    logKey, null, productId, token,
+  );
 
-  try {
-    const verifyResult = await playstore.verifySubscription(productId, token);
-    if (!verifyResult || !verifyResult.data) {
-      console.log(`(${logKey}) Should not reach here, no data should throw an error, just end`);
-      res.status(200).end();
-      return;
-    }
-
-    await dataApi.saveVerifyLog(logKey, PLAYSTORE, null, productId, token, verifyResult);
-
-    verifyData = verifyResult.data;
-    console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-  } catch (e) {
-    // i.e. ServiceUnavailableError
-    console.log(`(${logKey}) Server responses ${e.response.status}, just end`);
+  const { status, verifyData } = verifyResult;
+  if (status !== VALID) {
     res.status(200).end();
     return;
   }
 
-  // Acknowledge
-  if (verifyData.acknowledgementState === 0) {
-
-  }
-
+  const parsedData = dataApi.parseData(logKey, PLAYSTORE, verifyData);
   if (verifyData.linkedPurchaseToken) {
     await dataApi.invalidatePurchase(
-      logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
-      dataApi.parseData(logKey, PLAYSTORE, verifyData)
+      logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken, parsedData,
     );
+    console.log(`(${logKey}) Called invalidatePurchase instead of updatePurchase`);
   } else {
     await dataApi.updatePurchase(
-      logKey, PLAYSTORE, productId, token,
-      dataApi.parseData(logKey, PLAYSTORE, verifyData)
+      logKey, PLAYSTORE, productId, token, parsedData,
     );
   }
   console.log(`(${logKey}) Saved to Datastore`);
@@ -380,131 +292,68 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   // request from real user?
 
 
-  // 
-  const purchases = await dataApi.getPurchases(userId);
-  results.purchases = purchases.filter(purchase => {
+  let purchases = await dataApi.getPurchases(userId);
+  purchases = purchases.filter(purchase => {
     return getAppId(purchase.productId) === appId;
   });
-  if (!doForce) {
+  results.purchases = purchases;
+
+  if (!doForce || purchases.length === 0) {
     console.log(`(${logKey}) /status finished`);
-    res.send(JSON.stringify(results));
-  }
-  if (purchases.length === 0) {
-    console.log(`(${logKey}) doForce: ${doForce} but empty purchases, return INVALID`);
-    results.status = INVALID;
     res.send(JSON.stringify(results));
   }
 
   for (const purchase of purchases) {
     const { source, productId, token } = purchase;
 
-    let verifyData = null;
-
     if (source === APPSTORE) {
-      const verifyResult = await appstore.verifySubscription(productId, token);
-      if (dollabillApple.isFailure(verifyResult)) {
-        // @ts-ignore
-        const appleErrorCode = verifyResult.appleErrorCode;
-        if (!appleErrorCode || ![
-          AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
-          AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
-        ].includes(appleErrorCode)) {
-          // i.e. ServiceUnavailableError
-          console.log(`(${logKey}) appstore.verifySubscription errors, return UNKNOWN`);
-          results.status = UNKNOWN;
-          res.send(JSON.stringify(results));
-          return;
-        }
-
-        console.log(`(${logKey}) verifyResult is failure, return INVALID`);
-        results.status = INVALID;
-        res.send(JSON.stringify(results));
-        return;
-      }
-      await dataApi.saveVerifyLog(logKey, source, userId, productId, token, verifyResult);
-
-      const subscriptions = verifyResult.autoRenewableSubscriptions;
-      if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-        console.log(`(${logKey}) No subscription found, return INVALID`);
-        results.status = INVALID;
-        res.send(JSON.stringify(results));
-        return;
-      }
-      if (subscriptions.length !== 1) {
-        console.log(`(${logKey}) Found too many subscriptions, use only the first`);
-      }
-
-      verifyData = subscriptions[0];
-      console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-
-      // Acknowledge
-
-
-      await dataApi.updatePurchase(
-        logKey, APPSTORE, null, verifyResult.latestReceipt,
-        dataApi.parseData(logKey, APPSTORE, verifyData)
+      const verifyResult = await appstore.verifySubscription(
+        logKey, userId, productId, token,
       );
-      console.log(`(${logKey}) Saved to Datastore`);
-    }
 
-    if (source === PLAYSTORE) {
-      try {
-        const verifyResult = await playstore.verifySubscription(productId, token);
-        if (!verifyResult || !verifyResult.data) {
-          console.log(`(${logKey}) Should not reach here, no data should throw an error, return UNKNOWN`);
-          results.status = UNKNOWN;
-          res.send(JSON.stringify(results));
-          return;
-        }
-
-        await dataApi.saveVerifyLog(
-          logKey, source, userId, productId, token, verifyResult
-        );
-
-        verifyData = verifyResult.data;
-        console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-      } catch (e) {
-        if (
-          !e.response || !e.response.status || ![400, 410].includes(e.response.status)
-        ) {
-          // i.e. ServiceUnavailableError
-          console.log(`(${logKey}) Server responses ${e.response.status}, return UNKNOWN`);
-          results.status = UNKNOWN;
-          res.send(JSON.stringify(results));
-          return;
-        }
-
-        console.log(`(${logKey}) Server responses ${e.response.status}, return INVALID`);
-        results.status = INVALID;
+      const { status, latestReceipt, verifyData } = verifyResult;
+      results.status = status;
+      if (results.status !== VALID) {
         res.send(JSON.stringify(results));
         return;
       }
 
-      // Acknowledge
-      if (verifyData.acknowledgementState === 0) {
+      const parsedData = dataApi.parseData(logKey, APPSTORE, verifyData);
+      await dataApi.updatePurchase(logKey, APPSTORE, null, latestReceipt, parsedData);
+      console.log(`(${logKey}) Saved to Datastore`);
+    } else if (source === PLAYSTORE) {
+      const verifyResult = await playstore.verifySubscription(
+        logKey, userId, productId, token,
+      );
 
+      const { status, verifyData } = verifyResult;
+      results.status = status;
+      if (results.status !== VALID) {
+        res.send(JSON.stringify(results));
+        return;
       }
 
+      const parsedData = dataApi.parseData(logKey, PLAYSTORE, verifyData);
       if (verifyData.linkedPurchaseToken) {
         await dataApi.invalidatePurchase(
           logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
-          dataApi.parseData(logKey, PLAYSTORE, verifyData)
+          parsedData,
         );
+        console.log(`(${logKey}) Called invalidatePurchase instead of updatePurchase`);
       } else {
-        await dataApi.updatePurchase(
-          logKey, PLAYSTORE, productId, token,
-          dataApi.parseData(logKey, PLAYSTORE, verifyData)
-        );
+        await dataApi.updatePurchase(logKey, PLAYSTORE, productId, token, parsedData);
       }
       console.log(`(${logKey}) Saved to Datastore`);
-    }
+    } else throw new Error(`(${logKey}) Invalid source: ${source}`);
   }
 
-  const updatedPurchases = await dataApi.getPurchases(userId);
-  results.purchases = updatedPurchases.filter(purchase => {
+  purchases = await dataApi.getPurchases(userId);
+  purchases = purchases.filter(purchase => {
     return getAppId(purchase.productId) === appId;
   });
+  results.purchases = purchases;
 
+  console.log(`(${logKey}) /status finished`);
   res.send(JSON.stringify(results));
 }));
 

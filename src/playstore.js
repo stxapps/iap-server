@@ -2,6 +2,8 @@
 //             https://stackoverflow.com/questions/62054043/what-is-the-best-way-to-access-google-play-developers-api-with-node-js
 import { google } from 'googleapis';
 
+import dataApi from './data';
+import { PLAYSTORE, VALID, INVALID, UNKNOWN } from './const';
 import { getAppId } from './utils';
 
 const androidPublisher = google.androidpublisher('v3');
@@ -20,25 +22,69 @@ const bindAuthClient = async () => {
   didBindAuthClient = true;
 };
 
-const verifySubscription = async (productId, token) => {
-  await bindAuthClient();
-  const res = await androidPublisher.purchases.subscriptions.get({
-    packageName: getAppId(productId),
-    subscriptionId: productId,
-    token,
-  });
-  return res;
+const verifySubscription = async (logKey, userId, productId, token) => {
+  let verifyResult = null;
+  try {
+    await bindAuthClient();
+    verifyResult = await androidPublisher.purchases.subscriptions.get({
+      packageName: getAppId(productId),
+      subscriptionId: productId,
+      token,
+    });
+  } catch (e) {
+    if (!e.response || !e.response.status) {
+      console.log(`(${logKey}) playstore.verifySubscription error, return UNKNOWN`);
+      return { status: UNKNOWN, verifyData: null };
+    }
+
+    if (![400, 410].includes(e.response.status)) {
+      // i.e. ServiceUnavailableError
+      console.log(`(${logKey}) playstore.verifySubscription error: ${e.response.status}, return UNKNOWN`);
+      return { status: UNKNOWN, verifyData: null };
+    }
+
+    console.log(`(${logKey}) playstore.verifySubscription error: ${e.response.status}, return INVALID`);
+    return { status: INVALID, verifyData: null };
+  }
+
+  if (!verifyResult || !verifyResult.data) {
+    console.log(`(${logKey}) Should not reach here as no data should throw an error, return UNKNOWN`);
+    return { status: UNKNOWN, verifyData: null };
+  }
+  await dataApi.saveVerifyLog(
+    logKey, PLAYSTORE, userId, productId, token, verifyResult
+  );
+
+  const verifyData = verifyResult.data;
+  console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
+
+  if (verifyData.acknowledgementState === 0 && verifyData.paymentState !== 0) {
+    try {
+      await androidPublisher.purchases.subscriptions.acknowledge({
+        packageName: getAppId(productId),
+        subscriptionId: productId,
+        token,
+      });
+      console.log(`(${logKey}) Completed acknowledgement`);
+    } catch (e) {
+      if (!e.response || !e.response.status) {
+        console.log(`(${logKey}) acknowledgement error, return UNKNOWN`);
+        return { status: UNKNOWN, verifyData: null };
+      }
+
+      if (![400, 410].includes(e.response.status)) {
+        // i.e. ServiceUnavailableError
+        console.log(`(${logKey}) acknowledgement error: ${e.response.status}, return UNKNOWN`);
+        return { status: UNKNOWN, verifyData: null };
+      }
+
+      console.log(`(${logKey}) acknowledgement error: ${e.response.status}, return INVALID`);
+      return { status: INVALID, verifyData: null };
+    }
+  }
+
+  return { status: VALID, verifyData };
 };
 
-const acknowledgeSubscription = async (productId, token) => {
-  await bindAuthClient();
-  const res = await androidPublisher.purchases.subscriptions.acknowledge({
-    packageName: getAppId(productId),
-    subscriptionId: productId,
-    token,
-  });
-  return res;
-};
-
-const playstore = { verifySubscription, acknowledgeSubscription };
+const playstore = { verifySubscription };
 export default playstore;

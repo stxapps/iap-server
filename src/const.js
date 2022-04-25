@@ -47,7 +47,6 @@ export const ERROR = 'ERROR';
 // Table
 export const VERIFY_LOG = 'VerifyLog';
 export const NOTIFY_LOG = 'NotifyLog';
-export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
 export const PURCHASE = 'Purchase';
 export const PURCHASE_USER = 'PurchaseUser';
