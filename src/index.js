@@ -303,9 +303,11 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     res.send(JSON.stringify(results));
   }
 
+  const updatedPurchases = [];
   for (const purchase of purchases) {
     const { source, productId, token } = purchase;
 
+    let purchaseEntity;
     if (source === APPSTORE) {
       const verifyResult = await appstore.verifySubscription(
         logKey, userId, productId, token,
@@ -319,7 +321,9 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       }
 
       const parsedData = dataApi.parseData(logKey, APPSTORE, verifyData);
-      await dataApi.updatePurchase(logKey, APPSTORE, null, latestReceipt, parsedData);
+      purchaseEntity = await dataApi.updatePurchase(
+        logKey, APPSTORE, null, latestReceipt, parsedData,
+      );
       console.log(`(${logKey}) Saved to Datastore`);
     } else if (source === PLAYSTORE) {
       const verifyResult = await playstore.verifySubscription(
@@ -335,23 +339,23 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
       const parsedData = dataApi.parseData(logKey, PLAYSTORE, verifyData);
       if (verifyData.linkedPurchaseToken) {
-        await dataApi.invalidatePurchase(
+        purchaseEntity = await dataApi.invalidatePurchase(
           logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
           parsedData,
         );
         console.log(`(${logKey}) Called invalidatePurchase instead of updatePurchase`);
       } else {
-        await dataApi.updatePurchase(logKey, PLAYSTORE, productId, token, parsedData);
+        purchaseEntity = await dataApi.updatePurchase(
+          logKey, PLAYSTORE, productId, token, parsedData,
+        );
       }
       console.log(`(${logKey}) Saved to Datastore`);
     } else throw new Error(`(${logKey}) Invalid source: ${source}`);
+
+    updatedPurchases.push(dataApi.derivePurchaseDataFromRaw(purchaseEntity));
   }
 
-  purchases = await dataApi.getPurchases(userId);
-  purchases = purchases.filter(purchase => {
-    return getAppId(purchase.productId) === appId;
-  });
-  results.purchases = purchases;
+  results.purchases = updatedPurchases;
 
   console.log(`(${logKey}) /status finished`);
   res.send(JSON.stringify(results));

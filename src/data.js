@@ -79,6 +79,8 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     await transaction.rollback();
     throw e;
   }
+
+  return purchaseEntity;
 };
 
 /*const addUser = async () => {
@@ -114,6 +116,8 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
     await transaction.rollback();
     throw e;
   }
+
+  return purchaseEntity;
 };
 
 /*const deletePurchase = async (purchaseId) => {
@@ -177,6 +181,8 @@ const invalidatePurchase = async (
     await transaction.rollback();
     throw e;
   }
+
+  return purchaseEntity;
 };
 
 const getPurchase = async (logKey, source, token, originalOrderId) => {
@@ -270,6 +276,7 @@ const derivePurchaseEntityData = (
 };
 
 const derivePurchaseData = (purchaseEntity) => {
+  // Derive purchase data from queried purchase entity
   return {
     source: purchaseEntity.source,
     productId: purchaseEntity.productId,
@@ -280,6 +287,22 @@ const derivePurchaseData = (purchaseEntity) => {
     expiryDate: purchaseEntity.expiryDate,
     endDate: purchaseEntity.endDate,
     updateDate: purchaseEntity.updateDate,
+  };
+};
+
+const derivePurchaseDataFromRaw = (purchaseEntity) => {
+  // Derive purchase data from raw purchase entity
+  const data = purchaseEntity.data;
+  return {
+    source: data[0].value,
+    productId: data[1].value,
+    orderId: data[2].value,
+    token: data[3].value,
+    originalOrderId: data[4].value,
+    status: data[5].value,
+    expiryDate: data[6].value,
+    endDate: data[7].value,
+    updateDate: data[8].value,
   };
 };
 
@@ -381,7 +404,7 @@ const getPurchaseId = (logKey, source, token, originalOrderId) => {
 const data = {
   saveVerifyLog, saveNotifyLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
-  parseData,
+  derivePurchaseDataFromRaw, parseData,
 };
 
 export default data;
