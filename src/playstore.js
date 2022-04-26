@@ -3,7 +3,9 @@
 import { google } from 'googleapis';
 
 import dataApi from './data';
-import { PLAYSTORE, VALID, INVALID, UNKNOWN } from './const';
+import {
+  PLAYSTORE, VALID, INVALID, UNKNOWN, NO_ACK, DONE_ACK, CANT_ACK,
+} from './const';
 import { getAppId, sleep } from './utils';
 
 const androidPublisher = google.androidpublisher('v3');
@@ -22,7 +24,7 @@ const bindAuthClient = async () => {
 bindAuthClient();
 
 const initAuthClient = async () => {
-  let waits = [200, 500, 1000, 1500, 2000];
+  let waits = [200, 500, 1000, 1500, 2000, 2500, 3000];
   for (const wait of waits) {
     if (didBindAuthClient) return true;
     await sleep(wait);
@@ -71,6 +73,7 @@ const verifySubscription = async (logKey, userId, productId, token) => {
   const verifyData = verifyResult.data;
   console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
+  let ackResult = NO_ACK;
   if (verifyData.acknowledgementState === 0 && verifyData.paymentState !== 0) {
     try {
       await androidPublisher.purchases.subscriptions.acknowledge({
@@ -78,23 +81,22 @@ const verifySubscription = async (logKey, userId, productId, token) => {
         subscriptionId: productId,
         token,
       });
+      ackResult = DONE_ACK;
       console.log(`(${logKey}) Completed acknowledgement`);
     } catch (e) {
       if (!e.response || !e.response.status) {
-        console.log(`(${logKey}) acknowledgement error, return UNKNOWN`);
-        return { status: UNKNOWN, verifyData: null };
+        console.log(`(${logKey}) acknowledgement error`);
+        ackResult = CANT_ACK;
+      } else {
+        console.log(`(${logKey}) acknowledgement error: ${e.response.status}`);
+        ackResult = `${CANT_ACK}_${e.response.status}`;
       }
-
-      if (![400, 410].includes(e.response.status)) {
-        // i.e. ServiceUnavailableError
-        console.log(`(${logKey}) acknowledgement error: ${e.response.status}, return UNKNOWN`);
-        return { status: UNKNOWN, verifyData: null };
-      }
-
-      console.log(`(${logKey}) acknowledgement error: ${e.response.status}, return INVALID`);
-      return { status: INVALID, verifyData: null };
     }
   }
+  await dataApi.saveAcknowledgeLog(
+    logKey, userId, productId, token, verifyData.acknowledgementState,
+    verifyData.paymentState, ackResult,
+  );
 
   return { status: VALID, verifyData };
 };

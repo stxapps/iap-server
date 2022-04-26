@@ -1,7 +1,7 @@
 import { Datastore } from '@google-cloud/datastore';
 
 import {
-  VERIFY_LOG, NOTIFY_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
+  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
 
@@ -40,6 +40,22 @@ const saveNotifyLog = async (logKey, source, token, originalOrderId, notifyResul
     { name: 'updateDate', value: new Date() },
   ];
   await datastore.save({ key: datastore.key([NOTIFY_LOG]), data: logData });
+};
+
+const saveAcknowledgeLog = async (
+  logKey, userId, productId, token, acknowledgeState, paymentState, acknowledgeResult,
+) => {
+  const logData = [
+    { name: 'logKey', value: logKey },
+    { name: 'userId', value: userId },
+    { name: 'productId', value: productId },
+    { name: 'token', value: token },
+    { name: 'acknowledgeState', value: acknowledgeState },
+    { name: 'paymentState', value: paymentState },
+    { name: 'acknowledgeResult', value: acknowledgeResult },
+    { name: 'updateDate', value: new Date() },
+  ];
+  await datastore.save({ key: datastore.key([ACKNOWLEDGE_LOG]), data: logData });
 };
 
 /*const saveAskLog = async () => {
@@ -231,7 +247,11 @@ const getPurchases = async (userId) => {
       purchaseIds.push(entity.purchaseId);
     }
     const purchaseKeys = purchaseIds.map(id => datastore.key([PURCHASE, id]));
-    const [purchaseEntities] = await transaction.get(purchaseKeys);
+
+    let purchaseEntities = [];
+    if (purchaseKeys.length > 0) {
+      [purchaseEntities] = await transaction.get(purchaseKeys);
+    }
 
     await transaction.commit();
 
@@ -402,7 +422,7 @@ const getPurchaseId = (logKey, source, token, originalOrderId) => {
 };
 
 const data = {
-  saveVerifyLog, saveNotifyLog,
+  saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
   derivePurchaseDataFromRaw, parseData,
 };

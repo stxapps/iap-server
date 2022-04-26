@@ -301,6 +301,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   if (!doForce || purchases.length === 0) {
     console.log(`(${logKey}) /status finished`);
     res.send(JSON.stringify(results));
+    return;
   }
 
   const updatedPurchases = [];

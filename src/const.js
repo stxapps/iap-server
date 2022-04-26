@@ -47,6 +47,7 @@ export const ERROR = 'ERROR';
 // Table
 export const VERIFY_LOG = 'VerifyLog';
 export const NOTIFY_LOG = 'NotifyLog';
+export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
 export const PURCHASE = 'Purchase';
 export const PURCHASE_USER = 'PurchaseUser';
@@ -59,3 +60,8 @@ export const ON_HOLD = 'OnHold';
 export const PAUSED = 'Paused';
 export const EXPIRED = 'Expired';
 //export const UNKNOWN = 'UNKNOWN';
+
+// Acknowledge status
+export const NO_ACK = 'NoAck';
+export const DONE_ACK = 'DoneAck';
+export const CANT_ACK = 'CantAck';
