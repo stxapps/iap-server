@@ -9,6 +9,12 @@ export const runAsyncWrapper = (callback) => {
   }
 };
 
+export const getReferrer = (request) => {
+  let referrer = request.get('Referrer');
+  if (!referrer) referrer = request.get('Origin');
+  return referrer;
+};
+
 export const randomString = (length) => {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const charactersLength = characters.length;

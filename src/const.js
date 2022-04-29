@@ -65,3 +65,6 @@ export const EXPIRED = 'Expired';
 export const NO_ACK = 'NoAck';
 export const DONE_ACK = 'DoneAck';
 export const CANT_ACK = 'CantAck';
+
+// Test string
+export const SIGNED_TEST_STRING = 'Privacy Security UX';

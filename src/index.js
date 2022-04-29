@@ -1,16 +1,17 @@
 // Inpired by https://codelabs.developers.google.com/codelabs/flutter-in-app-purchases#8
 import express from 'express';
 import cors from 'cors';
+import { verifyECDSA } from '@stacks/encryption';
 
 import appstore from './appstore';
 import playstore from './playstore';
 import dataApi from './data';
 import {
   ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS, APP_IDS,
-  VALID, ERROR,
+  VALID, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
-  runAsyncWrapper, randomString, removeTailingSlash, isObject, isString,
+  runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
   getAppId,
 } from './utils';
 import appstoreKeys from './appstore-keys.json';
@@ -36,7 +37,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
   const results = { status: VALID };
 
-  const referrer = req.get('Referrer');
+  const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
     console.log(`(${logKey}) Invalid referrer, return ERROR`);
@@ -250,7 +251,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
   const results = { status: VALID };
 
-  const referrer = req.get('Referrer');
+  const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
     console.log(`(${logKey}) Invalid referrer, return ERROR`);
@@ -268,15 +269,15 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const { source, userId, appId, doForce } = reqBody;
-  if (!SOURCES.includes(source)) {
-    console.log(`(${logKey}) Invalid source, return ERROR`);
+  const { userId, signature, appId, doForce } = reqBody;
+  if (!isString(userId)) {
+    console.log(`(${logKey}) Invalid userId, return ERROR`);
     results.status = ERROR;
     res.send(JSON.stringify(results));
     return;
   }
-  if (!isString(userId)) {
-    console.log(`(${logKey}) Invalid userId, return ERROR`);
+  if (!isString(signature)) {
+    console.log(`(${logKey}) Invalid signature, return ERROR`);
     results.status = ERROR;
     res.send(JSON.stringify(results));
     return;
@@ -288,9 +289,13 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  // 1. check whether the user making the function call is authenticated
-  // request from real user?
-
+  const verifyResult = verifyECDSA(SIGNED_TEST_STRING, userId, signature);
+  if (!verifyResult) {
+    console.log(`(${logKey}) Wrong signature, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
 
   let purchases = await dataApi.getPurchases(userId);
   purchases = purchases.filter(purchase => {
