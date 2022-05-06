@@ -21,6 +21,7 @@ const verifySubscription = async (logKey, userId, productId, token) => {
 
     if (![
       AppleVerifyReceiptErrorCode.INVALID_RECEIPT_OR_DOWN,
+      AppleVerifyReceiptErrorCode.UNAUTHORIZED,
       AppleVerifyReceiptErrorCode.CUSTOMER_NOT_FOUND,
     ].includes(appleErrorCode)) {
       // i.e. ServiceUnavailableError
@@ -36,6 +37,10 @@ const verifySubscription = async (logKey, userId, productId, token) => {
 
   const latestReceipt = verifyResult.latestReceipt;
   console.log(`(${logKey}) latestReceipt: ${latestReceipt}`);
+  if (!latestReceipt) {
+    console.log(`(${logKey}) No latestReceipt, return INVALID`);
+    return { status: INVALID, latestReceipt: null, notifyData: null };
+  }
 
   const subscriptions = verifyResult.autoRenewableSubscriptions;
   if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
@@ -64,6 +69,10 @@ const verifyNotification = async (logKey, reqBody) => {
 
   const latestReceipt = notifyResult.latestReceipt;
   console.log(`(${logKey}) latestReceipt: ${latestReceipt}`);
+  if (!latestReceipt) {
+    console.log(`(${logKey}) No latestReceipt, just end`);
+    return { status: INVALID, latestReceipt: null, notifyData: null };
+  }
 
   const subscriptions = notifyResult.autoRenewableSubscriptions;
   if (!Array.isArray(subscriptions) || subscriptions.length === 0) {

@@ -4,6 +4,7 @@ import {
   VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
+import { getAppId } from './utils';
 
 const datastore = new Datastore();
 
@@ -96,7 +97,7 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     throw e;
   }
 
-  return purchaseEntity;
+  return derivePurchaseDataFromRaw(purchaseEntity);
 };
 
 /*const addUser = async () => {
@@ -133,12 +134,8 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
     throw e;
   }
 
-  return purchaseEntity;
+  return derivePurchaseDataFromRaw(purchaseEntity);
 };
-
-/*const deletePurchase = async (purchaseId) => {
-
-};*/
 
 const invalidatePurchase = async (
   logKey, source, productId, token, linkedToken, parsedData
@@ -198,7 +195,7 @@ const invalidatePurchase = async (
     throw e;
   }
 
-  return purchaseEntity;
+  return derivePurchaseDataFromRaw(purchaseEntity);
 };
 
 const getPurchase = async (logKey, source, token, originalOrderId) => {
@@ -232,7 +229,7 @@ const getPurchase = async (logKey, source, token, originalOrderId) => {
   }
 };
 
-const getPurchases = async (userId) => {
+const getPurchases = async (logKey, userId) => {
   const transaction = datastore.transaction({ readOnly: true });
   try {
     await transaction.run();
@@ -277,6 +274,113 @@ const expireSubscriptions = async () => {
   const expiredSubscription = await getExpiredSubscriptions();
 
 };*/
+
+const deleteVerifyLogs = async (logKey, userId, appId) => {
+  const transaction = datastore.transaction();
+  try {
+    await transaction.run();
+
+    const query = datastore.createQuery(VERIFY_LOG);
+    query.filter('userId', '=', userId);
+    const [verifyLogEntities] = await transaction.runQuery(query);
+
+    const keys = [];
+    for (const entity of verifyLogEntities) {
+      if (getAppId(entity.productId) === appId) keys.push(entity[datastore.KEY]);
+    }
+
+    if (keys.length > 0) transaction.delete(keys);
+    await transaction.commit();
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
+const deleteAcknowledgeLogs = async (logKey, userId, appId) => {
+  const transaction = datastore.transaction();
+  try {
+    await transaction.run();
+
+    const query = datastore.createQuery(ACKNOWLEDGE_LOG);
+    query.filter('userId', '=', userId);
+    const [ackLogEntities] = await transaction.runQuery(query);
+
+    const keys = [];
+    for (const entity of ackLogEntities) {
+      if (getAppId(entity.productId) === appId) keys.push(entity[datastore.KEY]);
+    }
+
+    if (keys.length > 0) transaction.delete(keys);
+    await transaction.commit();
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
+const deletePurchaseUsers = async (logKey, userId, appId) => {
+  const transaction = datastore.transaction();
+  try {
+    await transaction.run();
+
+    const query = datastore.createQuery(PURCHASE_USER);
+    query.filter('userId', '=', userId);
+    const [purchaseUserEntities] = await transaction.runQuery(query);
+
+    const purchaseIds = [];
+    for (const entity of purchaseUserEntities) {
+      if (purchaseIds.includes(entity.purchaseId)) continue;
+      purchaseIds.push(entity.purchaseId);
+    }
+    const purchaseKeys = purchaseIds.map(id => datastore.key([PURCHASE, id]));
+
+    let purchaseEntities = [];
+    if (purchaseKeys.length > 0) {
+      [purchaseEntities] = await transaction.get(purchaseKeys);
+    }
+
+    const keys = [];
+    for (const entity of purchaseUserEntities) {
+      const _purchaseEntities = [];
+      for (const purchaseEntity of purchaseEntities) {
+        const purchaseId = getPurchaseId(
+          logKey, purchaseEntity.source, purchaseEntity.token,
+          purchaseEntity.originalOrderId,
+        );
+        if (purchaseId === entity.purchaseId) _purchaseEntities.push(purchaseEntity);
+      }
+
+      if (_purchaseEntities.length === 0) {
+        console.log(`(logKey) Found empty purchases for purchaseId: ${entity.purchaseId} and userId: ${entity.userId}`);
+        continue;
+      }
+
+      let isSameAppId = true;
+      for (const purchaseEntity of _purchaseEntities) {
+        if (getAppId(purchaseEntity.productId) !== appId) {
+          isSameAppId = false;
+          break;
+        }
+      }
+      if (isSameAppId) keys.push(entity[datastore.KEY]);
+    }
+
+    if (keys.length > 0) transaction.delete(keys);
+    await transaction.commit();
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
+const deleteAll = async (logKey, userId, appId) => {
+  // No delete NotifyLogs as no userId
+  // No delete Purchase in case of multiple users
+  await deleteVerifyLogs(logKey, userId, appId);
+  await deleteAcknowledgeLogs(logKey, userId, appId);
+  await deletePurchaseUsers(logKey, userId, appId);
+};
 
 const derivePurchaseEntityData = (
   source, productId, orderId, token, originalOrderId, status,
@@ -375,7 +479,11 @@ const parseStatus = (logKey, source, data) => {
       return ACTIVE;
     } else if (data.status === 'active' && !data.willAutoRenew) {
       return NO_RENEW;
-    } else if (data.status === 'grace_period') {
+    } else if (now <= endDT && data.status === 'grace_period') {
+      return GRACE
+    } else if (now > endDT && data.status === 'grace_period') {
+      return ON_HOLD;
+    } else if (now <= endDT && data.status === 'billing_retry_period') {
       return GRACE
     } else if (now > endDT && data.status === 'billing_retry_period') {
       return ON_HOLD;
@@ -383,7 +491,8 @@ const parseStatus = (logKey, source, data) => {
       data.status === 'voluntary_cancel' ||
       data.status === 'involuntary_cancel' ||
       data.status === 'refunded' ||
-      data.status === 'upgraded'
+      data.status === 'upgraded' ||
+      data.status === 'other_not_active'
     )) {
       return EXPIRED;
     }
@@ -421,10 +530,38 @@ const getPurchaseId = (logKey, source, token, originalOrderId) => {
   throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
 
+const filterPurchases = (logKey, purchases, appId) => {
+  // Possible values:
+  //   Different apps
+  //   Same app with different products
+  //   Same products - some expires and some not
+  //   Too old products (expire > 60 days), if verify, will get error
+  const oldest = Date.now() - (45 * 24 * 60 * 60 * 1000);
+
+  let _purchases = purchases.filter(purchase => {
+    return (
+      getAppId(purchase.productId) === appId &&
+      purchase.endDate.getTime() >= oldest
+    );
+  });
+  _purchases = _purchases.sort((a, b) => {
+    return b.endDate.getTime() - a.endDate.getTime();
+  });
+
+  const filteredPurchases = [], _productIds = [];
+  for (const purchase of _purchases) {
+    if (_productIds.includes(purchase.productId)) continue;
+    _productIds.push(purchase.productId);
+    filteredPurchases.push(purchase);
+  }
+
+  return filteredPurchases;
+};
+
 const data = {
   saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
-  derivePurchaseDataFromRaw, parseData,
+  deleteAll, parseData, filterPurchases,
 };
 
 export default data;

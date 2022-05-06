@@ -8,11 +8,10 @@ import playstore from './playstore';
 import dataApi from './data';
 import {
   ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS, APP_IDS,
-  VALID, ERROR, SIGNED_TEST_STRING,
+  VALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
   runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
-  getAppId,
 } from './utils';
 import appstoreKeys from './appstore-keys.json';
 
@@ -81,6 +80,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
+  let purchase;
   if (source === APPSTORE) {
     const verifyResult = await appstore.verifySubscription(
       logKey, userId, productId, token,
@@ -94,7 +94,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     }
 
     const parsedData = dataApi.parseData(logKey, source, verifyData);
-    await dataApi.addPurchase(
+    purchase = await dataApi.addPurchase(
       logKey, source, userId, productId, latestReceipt, parsedData,
     );
     console.log(`(${logKey}) Saved to Datastore`);
@@ -115,13 +115,15 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       await dataApi.invalidatePurchase(
         logKey, source, productId, token, verifyData.linkedPurchaseToken, parsedData,
       );
-      console.log(`(${logKey}) Called invalidatePurchase instead of addPurchase`);
+      console.log(`(${logKey}) Called invalidatePurchase before addPurchase`);
     }
-    await dataApi.addPurchase(
+    purchase = await dataApi.addPurchase(
       logKey, source, userId, productId, token, parsedData,
     );
     console.log(`(${logKey}) Saved to Datastore`);
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
+
+  results.purchases = [purchase];
 
   console.log(`(${logKey}) /verify finished`);
   res.send(JSON.stringify(results));
@@ -297,10 +299,9 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  let purchases = await dataApi.getPurchases(userId);
-  purchases = purchases.filter(purchase => {
-    return getAppId(purchase.productId) === appId;
-  });
+  let purchases = await dataApi.getPurchases(logKey, userId);
+  purchases = dataApi.filterPurchases(logKey, purchases, appId);
+
   results.purchases = purchases;
 
   if (!doForce || purchases.length === 0) {
@@ -309,25 +310,25 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const updatedPurchases = [];
+  const statuses = [], updatedPurchases = [];
   for (const purchase of purchases) {
     const { source, productId, token } = purchase;
 
-    let purchaseEntity;
+    let updatedPurchase;
     if (source === APPSTORE) {
       const verifyResult = await appstore.verifySubscription(
         logKey, userId, productId, token,
       );
 
       const { status, latestReceipt, verifyData } = verifyResult;
-      results.status = status;
-      if (results.status !== VALID) {
-        res.send(JSON.stringify(results));
-        return;
+      if (status !== VALID) {
+        statuses.push(status);
+        updatedPurchases.push(null);
+        continue;
       }
 
       const parsedData = dataApi.parseData(logKey, APPSTORE, verifyData);
-      purchaseEntity = await dataApi.updatePurchase(
+      updatedPurchase = await dataApi.updatePurchase(
         logKey, APPSTORE, null, latestReceipt, parsedData,
       );
       console.log(`(${logKey}) Saved to Datastore`);
@@ -337,33 +338,100 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       );
 
       const { status, verifyData } = verifyResult;
-      results.status = status;
-      if (results.status !== VALID) {
-        res.send(JSON.stringify(results));
-        return;
+      if (status !== VALID) {
+        statuses.push(status);
+        updatedPurchases.push(null);
+        continue;
       }
 
       const parsedData = dataApi.parseData(logKey, PLAYSTORE, verifyData);
       if (verifyData.linkedPurchaseToken) {
-        purchaseEntity = await dataApi.invalidatePurchase(
+        updatedPurchase = await dataApi.invalidatePurchase(
           logKey, PLAYSTORE, productId, token, verifyData.linkedPurchaseToken,
           parsedData,
         );
         console.log(`(${logKey}) Called invalidatePurchase instead of updatePurchase`);
       } else {
-        purchaseEntity = await dataApi.updatePurchase(
+        updatedPurchase = await dataApi.updatePurchase(
           logKey, PLAYSTORE, productId, token, parsedData,
         );
       }
       console.log(`(${logKey}) Saved to Datastore`);
     } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
-    updatedPurchases.push(dataApi.derivePurchaseDataFromRaw(purchaseEntity));
+    statuses.push(VALID);
+    updatedPurchases.push(updatedPurchase);
   }
 
-  results.purchases = updatedPurchases;
+  if (statuses.some(el => el === VALID)) {
+    results.purchases = updatedPurchases.filter(el => el !== null);
+  } else if (statuses.some(el => el === UNKNOWN)) {
+    results.status = UNKNOWN;
+    delete results.purchases;
+  } else {
+    results.purchases = [];
+  }
 
   console.log(`(${logKey}) /status finished`);
+  res.send(JSON.stringify(results));
+}));
+
+app.options('/delete-all', cors(cCorsOptions));
+app.post('/delete-all', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+  const logKey = randomString(12);
+  console.log(`(${logKey}) /delete-all receives a post request`);
+
+  const results = { status: VALID };
+
+  const referrer = getReferrer(req);
+  console.log(`(${logKey}) Referrer: ${referrer}`);
+  if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
+    console.log(`(${logKey}) Invalid referrer, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const reqBody = req.body;
+  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody)) {
+    console.log(`(${logKey}) Invalid reqBody, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const { userId, signature, appId } = reqBody;
+  if (!isString(userId)) {
+    console.log(`(${logKey}) Invalid userId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+  if (!isString(signature)) {
+    console.log(`(${logKey}) Invalid signature, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+  if (!APP_IDS.includes(appId)) {
+    console.log(`(${logKey}) Invalid appId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const verifyResult = verifyECDSA(SIGNED_TEST_STRING, userId, signature);
+  if (!verifyResult) {
+    console.log(`(${logKey}) Wrong signature, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  await dataApi.deleteAll(logKey, userId, appId);
+
+  console.log(`(${logKey}) /delete-all finished`);
   res.send(JSON.stringify(results));
 }));
 
