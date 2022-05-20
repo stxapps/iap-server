@@ -123,7 +123,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     console.log(`(${logKey}) Saved to Datastore`);
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
-  results.purchases = [purchase];
+  results.purchase = purchase;
 
   console.log(`(${logKey}) /verify finished`);
   res.send(JSON.stringify(results));
