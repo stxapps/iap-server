@@ -32,7 +32,7 @@ app.get('/', (_req, res) => {
 app.options('/verify', cors(cCorsOptions));
 app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
-  console.log(`(${logKey}) /appstore/verify receives a post request`);
+  console.log(`(${logKey}) /verify receives a post request`);
 
   const results = { status: VALID };
 

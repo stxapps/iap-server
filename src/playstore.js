@@ -14,7 +14,7 @@ let didBindAuthClient = false;
 const bindAuthClient = async () => {
   const auth = new google.auth.GoogleAuth({
     keyFile: 'src/playstore-service-account.json',
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    scopes: ['https://www.googleapis.com/auth/androidpublisher'],
   });
   const authClient = await auth.getClient();
   google.options({ auth: authClient });
@@ -73,8 +73,17 @@ const verifySubscription = async (logKey, userId, productId, token) => {
   const verifyData = verifyResult.data;
   console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
+  let acknowledgementState;
+  if ('acknowledgementState' in verifyData) {
+    acknowledgementState = verifyData.acknowledgementState
+  } else acknowledgementState = null;
+
+  let paymentState;
+  if ('paymentState' in verifyData) paymentState = verifyData.paymentState;
+  else paymentState = null;
+
   let ackResult = NO_ACK;
-  if (verifyData.acknowledgementState === 0 && verifyData.paymentState !== 0) {
+  if (acknowledgementState === 0 && paymentState !== 0) {
     try {
       await androidPublisher.purchases.subscriptions.acknowledge({
         packageName: getAppId(productId),
@@ -94,8 +103,7 @@ const verifySubscription = async (logKey, userId, productId, token) => {
     }
   }
   await dataApi.saveAcknowledgeLog(
-    logKey, userId, productId, token, verifyData.acknowledgementState,
-    verifyData.paymentState, ackResult,
+    logKey, userId, productId, token, acknowledgementState, paymentState, ackResult,
   );
 
   return { status: VALID, verifyData };
