@@ -16,7 +16,7 @@ const saveVerifyLog = async (
     { name: 'source', value: source },
     { name: 'userId', value: userId },
     { name: 'productId', value: productId },
-    { name: 'token', value: token },
+    { name: 'token', value: token, excludeFromIndexes: true },
     {
       name: 'verifyResult',
       value: JSON.stringify(verifyResult),
@@ -31,7 +31,7 @@ const saveNotifyLog = async (logKey, source, token, originalOrderId, notifyResul
   const logData = [
     { name: 'logKey', value: logKey },
     { name: 'source', value: source },
-    { name: 'token', value: token },
+    { name: 'token', value: token, excludeFromIndexes: true },
     { name: 'originalOrderId', value: originalOrderId },
     {
       name: 'notifyResult',
@@ -50,7 +50,7 @@ const saveAcknowledgeLog = async (
     { name: 'logKey', value: logKey },
     { name: 'userId', value: userId },
     { name: 'productId', value: productId },
-    { name: 'token', value: token },
+    { name: 'token', value: token, excludeFromIndexes: true },
     { name: 'acknowledgeState', value: acknowledgeState },
     { name: 'paymentState', value: paymentState },
     { name: 'acknowledgeResult', value: acknowledgeResult },
@@ -124,7 +124,7 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
 
     const [oldPurchaseEntity] = await transaction.get(purchaseKey);
     if (!oldPurchaseEntity) {
-      console.log(`(logKey) Update purchase without existing purchase for purchaseId: ${purchaseId}`);
+      console.log(`(${logKey}) Update purchase without existing purchase for purchaseId: ${purchaseId}`);
     }
 
     transaction.save(purchaseEntity);
@@ -352,7 +352,7 @@ const deletePurchaseUsers = async (logKey, userId, appId) => {
       }
 
       if (_purchaseEntities.length === 0) {
-        console.log(`(logKey) Found empty purchases for purchaseId: ${entity.purchaseId} and userId: ${entity.userId}`);
+        console.log(`(${logKey}) Found empty purchases for purchaseId: ${entity.purchaseId} and userId: ${entity.userId}`);
         continue;
       }
 
@@ -390,7 +390,7 @@ const derivePurchaseEntityData = (
     { name: 'source', value: source },
     { name: 'productId', value: productId },
     { name: 'orderId', value: orderId },
-    { name: 'token', value: token },
+    { name: 'token', value: token, excludeFromIndexes: true },
     { name: 'originalOrderId', value: originalOrderId },
     { name: 'status', value: status },
     { name: 'expiryDate', value: expiryDate },
@@ -458,10 +458,10 @@ const parseData = (logKey, source, data) => {
   const now = Date.now();
   const endDT = parsedData.endDate.getTime();
   if (now <= endDT && ![ACTIVE, NO_RENEW, GRACE].includes(parsedData.status)) {
-    console.log(`(logKey) Found future endDate with inconsistent status: ${parsedData.status}`);
+    console.log(`(${logKey}) Found future endDate with inconsistent status: ${parsedData.status}`);
   }
   if (now > endDT && ![ON_HOLD, PAUSED, EXPIRED].includes(parsedData.status)) {
-    console.log(`(logKey) Found past endDate with inconsistent status: ${parsedData.status}`);
+    console.log(`(${logKey}) Found past endDate with inconsistent status: ${parsedData.status}`);
   }
 
   return parsedData;
@@ -497,7 +497,7 @@ const parseStatus = (logKey, source, data) => {
       return EXPIRED;
     }
 
-    console.log(`(logKey) Unknown status`);
+    console.log(`(${logKey}) Unknown status`);
     return UNKNOWN;
   } else if (source === PLAYSTORE) {
     // https://developer.android.com/google/play/billing/subscriptions
@@ -519,7 +519,7 @@ const parseStatus = (logKey, source, data) => {
       return EXPIRED;
     }
 
-    console.log(`(logKey) Unknown status`);
+    console.log(`(${logKey}) Unknown status`);
     return UNKNOWN;
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
