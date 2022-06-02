@@ -1,7 +1,7 @@
 import {
   COM_BRACEDOTTO, COM_JUSTNOTECC, COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER,
 } from './const';
-import appstoreKeys from './appstore-keys.json';
+import appstoreKeys from './appstore-keys.json' assert { type: 'json' };
 
 export const runAsyncWrapper = (callback) => {
   return function (req, res, next) {

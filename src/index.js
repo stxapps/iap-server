@@ -1,7 +1,7 @@
 // Inpired by https://codelabs.developers.google.com/codelabs/flutter-in-app-purchases#8
 import express from 'express';
 import cors from 'cors';
-import { verifyECDSA } from '@stacks/encryption';
+import { verifyECDSA, signECDSA } from '@stacks/encryption';
 
 import appstore from './appstore';
 import playstore from './playstore';
@@ -13,7 +13,6 @@ import {
 import {
   runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
 } from './utils';
-import appstoreKeys from './appstore-keys.json';
 
 const app = express();
 app.use(express.json());
@@ -135,22 +134,37 @@ app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res
   console.log(`(${logKey}) /appstore/notify receives a post request`);
 
   const reqBody = req.body;
-  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
-  if (!isObject(reqBody)) {
+  //console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody) || !isString(reqBody.signedPayload)) {
     console.log(`(${logKey}) Invalid reqBody, just end`);
     res.status(200).end();
     return;
   }
 
-  if (![
-    appstoreKeys['secretKeyBracedotto'], appstoreKeys['secretKeyJustnotecc'],
-  ].includes(reqBody.password)) {
-    console.log(`(${logKey}) Secret key not matched, just end`);
+  let verifyResult;
+  try {
+    verifyResult = await appstore.verifyNotification(logKey, reqBody.signedPayload);
+  } catch (e) {
+    console.log(`(${logKey}) Could not verify signedPayload, just end`);
     res.status(200).end();
     return;
   }
 
-  const notifyResult = await appstore.verifyNotification(logKey, reqBody);
+
+
+  console.log('End of the walk way!');
+  res.status(200).end();
+  return;
+
+
+
+
+  const notifyResult = await appstore.parseNotification(logKey, verifyResult);
+
+
+
+  // No latestReceipt!!!
+
 
   const { status, latestReceipt, notifyData } = notifyResult;
   if (status !== VALID) {
@@ -173,7 +187,7 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
 
   const reqBody = req.body;
   console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
-  if (!isObject(reqBody) || !reqBody.subscription || !reqBody.message) {
+  if (!isObject(reqBody) || !reqBody.subscription || !isObject(reqBody.message)) {
     console.log(`(${logKey}) Invalid reqBody, just end`);
     res.status(200).end();
     return;
@@ -181,8 +195,8 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
 
   let data;
   try {
-    const _data = Buffer.from(reqBody.message.data, 'base64').toString('ascii');
-    data = JSON.parse(_data);
+    data = Buffer.from(reqBody.message.data, 'base64').toString('ascii');
+    data = JSON.parse(data);
     console.log(`(${logKey}) Notification data: ${JSON.stringify(data)}`);
   } catch (e) {
     console.log(`(${logKey}) Could not parse notification data, just end`);
@@ -196,7 +210,7 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
     return;
   }
 
-  if (!data.subscriptionNotification || !isObject(data.subscriptionNotification)) {
+  if (!isObject(data.subscriptionNotification)) {
     console.log(`(${logKey}) No or invalid subscriptionNotification, just end`);
     res.status(200).end();
     return;
@@ -433,6 +447,21 @@ app.post('/delete-all', cors(cCorsOptions), runAsyncWrapper(async (req, res) => 
 
   console.log(`(${logKey}) /delete-all finished`);
   res.send(JSON.stringify(results));
+}));
+
+app.options('/test', cors(cCorsOptions));
+app.post('/test', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+  const reqBody = req.body;
+  const { userId, signature } = reqBody;
+
+  const verifyResult = verifyECDSA(SIGNED_TEST_STRING, userId, signature);
+  console.log('verifyResult: ', verifyResult);
+
+
+  const sigObj = signECDSA('2127f7ae41cb8836a4c0c868bab23e12185bc49458e69d344b79c5975e74d284', SIGNED_TEST_STRING);
+  console.log('sigObj: ', sigObj);
+
+  res.status(200).end();
 }));
 
 // Listen to the App Engine-specified port, or 8088 otherwise
