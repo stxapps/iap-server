@@ -132,7 +132,7 @@ const verifyNotification = async (logKey, signedPayload) => {
   return payload;
 };
 
-export const derivePayloadV1 = (payloadV2) => {
+const derivePayloadV1 = (payloadV2) => {
   const { transactionInfo, renewalInfo } = payloadV2.data;
 
   const latestReceiptInfo = {
@@ -240,5 +240,7 @@ const parseNotification = async (logKey, reqBody) => {
   return { status: VALID, notifyData };
 };
 
-const appstore = { verifySubscription, verifyNotification, parseNotification };
+const appstore = {
+  verifySubscription, verifyNotification, derivePayloadV1, parseNotification,
+};
 export default appstore;
