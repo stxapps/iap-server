@@ -123,7 +123,10 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
     await transaction.run();
 
     const [oldPurchaseEntity] = await transaction.get(purchaseKey);
-    if (!oldPurchaseEntity) {
+    if (oldPurchaseEntity && oldPurchaseEntity.token) {
+      const el = purchaseEntity.data.find(el => el.name === 'token');
+      if (!el.value) el.value = oldPurchaseEntity.token;
+    } else {
       console.log(`(${logKey}) Update purchase without existing purchase for purchaseId: ${purchaseId}`);
     }
 

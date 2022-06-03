@@ -1,7 +1,7 @@
 // Inpired by https://codelabs.developers.google.com/codelabs/flutter-in-app-purchases#8
 import express from 'express';
 import cors from 'cors';
-import { verifyECDSA, signECDSA } from '@stacks/encryption';
+import { verifyECDSA } from '@stacks/encryption';
 
 import appstore from './appstore';
 import playstore from './playstore';
@@ -134,46 +134,33 @@ app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res
   console.log(`(${logKey}) /appstore/notify receives a post request`);
 
   const reqBody = req.body;
-  //console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
   if (!isObject(reqBody) || !isString(reqBody.signedPayload)) {
     console.log(`(${logKey}) Invalid reqBody, just end`);
     res.status(200).end();
     return;
   }
 
-  let verifyResult;
+  let payloadV1;
   try {
-    verifyResult = await appstore.verifyNotification(logKey, reqBody.signedPayload);
+    const payloadV2 = await appstore.verifyNotification(logKey, reqBody.signedPayload);
+    payloadV1 = appstore.derivePayloadV1(payloadV2);
   } catch (e) {
     console.log(`(${logKey}) Could not verify signedPayload, just end`);
     res.status(200).end();
     return;
   }
 
+  const notifyResult = await appstore.parseNotification(logKey, payloadV1);
 
-
-  console.log('End of the walk way!');
-  res.status(200).end();
-  return;
-
-
-
-
-  const notifyResult = await appstore.parseNotification(logKey, verifyResult);
-
-
-
-  // No latestReceipt!!!
-
-
-  const { status, latestReceipt, notifyData } = notifyResult;
+  const { status, notifyData } = notifyResult;
   if (status !== VALID) {
     res.status(200).end();
     return;
   }
 
   const parsedData = dataApi.parseData(logKey, APPSTORE, notifyData);
-  await dataApi.updatePurchase(logKey, APPSTORE, null, latestReceipt, parsedData);
+  await dataApi.updatePurchase(logKey, APPSTORE, null, null, parsedData);
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /appstore/notify finished`);
@@ -330,6 +317,11 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
     let updatedPurchase;
     if (source === APPSTORE) {
+      // token can be null i.e. no verify but notification arrived.
+      // should be happen only on App Store
+      //   as in notification V2, there's no latestReceipt.
+      if (!token) continue;
+
       const verifyResult = await appstore.verifySubscription(
         logKey, userId, productId, token,
       );
@@ -447,21 +439,6 @@ app.post('/delete-all', cors(cCorsOptions), runAsyncWrapper(async (req, res) => 
 
   console.log(`(${logKey}) /delete-all finished`);
   res.send(JSON.stringify(results));
-}));
-
-app.options('/test', cors(cCorsOptions));
-app.post('/test', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
-  const reqBody = req.body;
-  const { userId, signature } = reqBody;
-
-  const verifyResult = verifyECDSA(SIGNED_TEST_STRING, userId, signature);
-  console.log('verifyResult: ', verifyResult);
-
-
-  const sigObj = signECDSA('2127f7ae41cb8836a4c0c868bab23e12185bc49458e69d344b79c5975e74d284', SIGNED_TEST_STRING);
-  console.log('sigObj: ', sigObj);
-
-  res.status(200).end();
 }));
 
 // Listen to the App Engine-specified port, or 8088 otherwise

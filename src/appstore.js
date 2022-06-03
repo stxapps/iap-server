@@ -123,89 +123,92 @@ const verifyNotification = async (logKey, signedPayload) => {
   const transactionInfo = await verifySignedPayload(payload.data.signedTransactionInfo);
   const renewalInfo = await verifySignedPayload(payload.data.signedRenewalInfo);
 
+  payload.data.transactionInfo = transactionInfo;
+  payload.data.renewalInfo = renewalInfo;
+
+  delete payload.data.signedTransactionInfo;
+  delete payload.data.signedRenewalInfo;
+
+  return payload;
+};
+
+export const derivePayloadV1 = (payloadV2) => {
+  const { transactionInfo, renewalInfo } = payloadV2.data;
+
   const latestReceiptInfo = {
+    transaction_id: transactionInfo.transactionId + '',
+    original_transaction_id: transactionInfo.originalTransactionId + '',
     purchase_date_ms: transactionInfo.purchaseDate + '',
     original_purchase_date_ms: transactionInfo.originalPurchaseDate + '',
-    transaction_id: transactionInfo.transactionId,
-    original_transaction_id: transactionInfo.originalTransactionId,
+    product_id: transactionInfo.productId + '',
+    subscription_group_identifier: transactionInfo.subscriptionGroupIdentifier + '',
+    web_order_line_item_id: transactionInfo.webOrderLineItemId + '',
+    expires_date: (new Date(transactionInfo.expiresDate)).toISOString() + '',
     expires_date_ms: transactionInfo.expiresDate + '',
-    product_id: transactionInfo.productId,
-    subscription_group_identifier: transactionInfo.subscriptionGroupIdentifier,
-    web_order_line_item_id: transactionInfo.webOrderLineItemId,
-    expires_date: (new Date(transactionInfo.expiresDate)).toISOString(),
   }
-  if (transactionInfo.isInIntroOfferPeriod) {
-    const v = transactionInfo.isInIntroOfferPeriod + '';
-    latestReceiptInfo.is_in_intro_offer_period = v;
+  if ('offerType' in transactionInfo) {
+    if (transactionInfo.offerType === 1) {
+      latestReceiptInfo.is_in_intro_offer_period = true + '';
+      // In V2, intro offer can be free as trial period
+      //latestReceiptInfo.is_trial_period = true + '';
+    } else {
+      const v = transactionInfo.offerType + '';
+      latestReceiptInfo.offer_code_ref_name = v;
+    }
   }
-  if (
-    transactionInfo.isTrialPeriod === true ||
-    transactionInfo.isTrialPeriod === false
-  ) {
-    const v = transactionInfo.isTrialPeriod + '';
-    latestReceiptInfo.is_trial_period = v;
-  }
-  if (transactionInfo.revocationDate) {
-    const v = transactionInfo.revocationDate + '';
-    latestReceiptInfo.cancellation_date_ms = v;
-  }
-  if (transactionInfo.isUpgraded === true || transactionInfo.isUpgraded === false) {
-    const v = transactionInfo.isUpgraded + '';
-    latestReceiptInfo.is_upgraded = v;
-  }
-  if (transactionInfo.revocationReason) {
-    const v = transactionInfo.revocationReason + '';
-    latestReceiptInfo.cancellation_reason = v;
-  }
-  if (transactionInfo.offerIdentifier) {
+  if ('offerIdentifier' in transactionInfo) {
     const v = transactionInfo.offerIdentifier + '';
     latestReceiptInfo.promotional_offer_id = v;
   }
-  if (transactionInfo.offerType) {
-    const v = transactionInfo.offerType + '';
-    latestReceiptInfo.offer_code_ref_name = v;
+  if ('isUpgraded' in transactionInfo) {
+    const v = transactionInfo.isUpgraded + '';
+    latestReceiptInfo.is_upgraded = v;
+  }
+  if ('revocationDate' in transactionInfo) {
+    const v = transactionInfo.revocationDate + '';
+    latestReceiptInfo.cancellation_date_ms = v;
+  }
+  if ('revocationReason' in transactionInfo) {
+    const v = transactionInfo.revocationReason + '';
+    latestReceiptInfo.cancellation_reason = v;
   }
 
   const pendingRenewalInfo = {
-    original_transaction_id: renewalInfo.originalTransactionId,
-    product_id: 'com.bracedotto.supporter',
+    auto_renew_product_id: renewalInfo.autoRenewProductId + '',
     auto_renew_status: renewalInfo.autoRenewStatus + '',
-    auto_renew_product_id: renewalInfo.autoRenewProductId,
+    original_transaction_id: renewalInfo.originalTransactionId + '',
   };
-  if (renewalInfo.priceIncreaseStatus) {
-    const v = renewalInfo.priceIncreaseStatus + '';
-    pendingRenewalInfo.price_consent_status = v;
-  }
-  if (renewalInfo.expirationIntent) {
-    const v = renewalInfo.expirationIntent + '';
-    pendingRenewalInfo.expiration_intent = v;
-  }
-  if (renewalInfo.gracePeriodExpiresDate) {
+  if ('gracePeriodExpiresDate' in renewalInfo) {
     const v = renewalInfo.gracePeriodExpiresDate + '';
     pendingRenewalInfo.grace_period_expires_date_ms = v;
   }
-  if (
-    renewalInfo.isInBillingRetryPeriod === true ||
-    renewalInfo.isInBillingRetryPeriod === false
-  ) {
-    const v = renewalInfo.isInBillingRetryPeriod = '';
+  if ('isInBillingRetryPeriod' in renewalInfo) {
+    const v = renewalInfo.isInBillingRetryPeriod ? '1' : '0';
     pendingRenewalInfo.is_in_billing_retry_period = v;
   }
+  if ('expirationIntent' in renewalInfo) {
+    const v = renewalInfo.expirationIntent + '';
+    pendingRenewalInfo.expiration_intent = v;
+  }
+  if ('priceIncreaseStatus' in renewalInfo) {
+    const v = renewalInfo.priceIncreaseStatus + '';
+    pendingRenewalInfo.price_consent_status = v;
+  }
 
-  const verifyResult = {
+  const payloadV1 = {
     unified_receipt: {
       latest_receipt_info: [latestReceiptInfo],
       pending_renewal_info: [pendingRenewalInfo],
-      environment: payload.data.environment,
+      environment: payloadV2.data.environment + '',
       latest_receipt: null,
     },
     password: 'password',
-    bid: payload.data.bundleId,
-    bvrs: payload.data.bundleVersion,
-    notification_type: payload.notificationType,
+    bid: payloadV2.data.bundleId + '',
+    bvrs: payloadV2.data.bundleVersion + '',
+    notification_type: payloadV2.notificationType + '',
   };
 
-  return verifyResult;
+  return payloadV1;
 };
 
 const parseNotification = async (logKey, reqBody) => {
@@ -215,20 +218,13 @@ const parseNotification = async (logKey, reqBody) => {
   if (dollabillApple.isFailure(notifyResult)) {
     // i.e. NotValidNotification
     console.log(`(${logKey}) Not valid notification, just end`);
-    return { status: INVALID, latestReceipt: null, notifyData: null };
-  }
-
-  const latestReceipt = notifyResult.latestReceipt;
-  console.log(`(${logKey}) latestReceipt: ${latestReceipt}`);
-  if (!latestReceipt) {
-    console.log(`(${logKey}) No latestReceipt, just end`);
-    return { status: INVALID, latestReceipt: null, notifyData: null };
+    return { status: INVALID, notifyData: null };
   }
 
   const subscriptions = notifyResult.autoRenewableSubscriptions;
   if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
     console.log(`(${logKey}) No subscription found, just end`);
-    return { status: INVALID, latestReceipt: null, notifyData: null };
+    return { status: INVALID, notifyData: null };
   }
   if (subscriptions.length !== 1) {
     console.log(`(${logKey}) Found ${subscriptions.length} subscriptions, use only the first`);
@@ -241,7 +237,7 @@ const parseNotification = async (logKey, reqBody) => {
     logKey, APPSTORE, null, notifyData.originalTransactionId, notifyResult
   );
 
-  return { status: VALID, latestReceipt, notifyData };
+  return { status: VALID, notifyData };
 };
 
 const appstore = { verifySubscription, verifyNotification, parseNotification };
