@@ -7,7 +7,7 @@ import appstore from './appstore';
 import playstore from './playstore';
 import dataApi from './data';
 import {
-  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PRODUCT_IDS, APP_IDS,
+  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, MANUAL, PRODUCT_IDS, APP_IDS,
   VALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
@@ -19,10 +19,10 @@ app.use(express.json());
 
 const cCorsOptions = {
   'origin': ALLOWED_ORIGINS,
-}
+};
 const sCorsOptions = {
   'origin': '*',
-}
+};
 
 app.get('/', (_req, res) => {
   res.send('Welcome to <a href="https://www.stxapps.com">STX Apps</a>\'s server!');
@@ -363,6 +363,8 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
         );
       }
       console.log(`(${logKey}) Saved to Datastore`);
+    } else if (source === MANUAL) {
+      updatedPurchase = purchase;
     } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
     statuses.push(VALID);

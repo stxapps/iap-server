@@ -1,8 +1,9 @@
 import { Datastore } from '@google-cloud/datastore';
 
 import {
-  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_USER, APPSTORE, PLAYSTORE,
-  ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
+  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_EXTRA, PURCHASE_USER,
+  APPSTORE, PLAYSTORE, MANUAL, ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED,
+  UNKNOWN,
 } from './const';
 import { getAppId } from './utils';
 
@@ -67,6 +68,7 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
   // Purchase's columns: source, productId, orderId, token, status, expiryDate, endDate, updateDate
   // User's columns: purchaseId, userId
   // Not now columns: purchaseDate, startDate, trialPeriod, gracePeriod
+  const date = new Date();
 
   const purchaseId = getPurchaseId(logKey, source, token, parsedData.originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
@@ -77,20 +79,26 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
       parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
+  const purchaseExtraEntity = {
+    key: datastore.key([PURCHASE_EXTRA, purchaseId]),
+    data: [
+      { name: 'createDate', value: date },
+    ],
+  };
   const purchaseUserId = `${purchaseId}_${userId}`;
   const purchaseUserEntity = {
     key: datastore.key([PURCHASE_USER, purchaseUserId]),
     data: [
       { name: 'purchaseId', value: purchaseId },
       { name: 'userId', value: userId },
-      { name: 'updateDate', value: new Date() },
+      { name: 'updateDate', value: date },
     ],
   };
 
   const transaction = datastore.transaction();
   try {
     await transaction.run();
-    transaction.save([purchaseEntity, purchaseUserEntity]);
+    transaction.save([purchaseEntity, purchaseExtraEntity, purchaseUserEntity]);
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
@@ -261,6 +269,71 @@ const getPurchases = async (logKey, userId) => {
     throw e;
   }
 };
+
+const getUpdatedPurchases = async (updateDate) => {
+  const transaction = datastore.transaction({ readOnly: true });
+  try {
+    await transaction.run();
+
+    const query = datastore.createQuery(PURCHASE);
+    query.filter('updateDate', '>=', updateDate);
+    query.limit(800);
+    const [purchaseEntities] = await transaction.runQuery(query);
+
+    await transaction.commit();
+
+    return purchaseEntities.map(purchaseEntity => derivePurchaseData(purchaseEntity));
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
+const getPurchaseExtras = async (ids) => {
+  const transaction = datastore.transaction({ readOnly: true });
+  try {
+    await transaction.run();
+
+    const keys = ids.map(id => datastore.key([PURCHASE_EXTRA, id]));
+
+    let entities = [];
+    if (keys.length > 0) {
+      [entities] = await transaction.get(keys);
+    }
+
+    await transaction.commit();
+
+    return entities.map(entity => derivePurchaseExtraData(entity));
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
+// Error because no DataStore index found! Use purchases.json locally instead.
+/*const getReverifiedPurchases = async () => {
+  const transaction = datastore.transaction({ readOnly: true });
+  try {
+    await transaction.run();
+
+    const purchaseEntities = [];
+    for (const status of [ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, UNKNOWN]) {
+      const query = datastore.createQuery(PURCHASE);
+      query.filter('status', '=', status);
+      query.filter('endDate', '<', new Date());
+      query.limit(800);
+      const [_purchaseEntities] = await transaction.runQuery(query);
+      purchaseEntities.push(..._purchaseEntities);
+    }
+
+    await transaction.commit();
+
+    return purchaseEntities.map(purchaseEntity => derivePurchaseData(purchaseEntity));
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};*/
 
 /*const getExpiredSubscriptions = () => new Promise((resolve, reject) => {
   const query = datastore.createQuery(PURCHASE);
@@ -433,6 +506,13 @@ const derivePurchaseDataFromRaw = (purchaseEntity) => {
   };
 };
 
+const derivePurchaseExtraData = (purchaseExtraEntity) => {
+  return {
+    keyName: purchaseExtraEntity[datastore.KEY].name,
+    createDate: purchaseExtraEntity.createDate,
+  };
+};
+
 const parseData = (logKey, source, data) => {
   // Parse verifyData or notifyData to parsedData
   const parsedData = {};
@@ -530,6 +610,7 @@ const parseStatus = (logKey, source, data) => {
 const getPurchaseId = (logKey, source, token, originalOrderId) => {
   if (source === APPSTORE) return `${source}_${originalOrderId}`;
   if (source === PLAYSTORE) return `${source}_${token}`;
+  if (source === MANUAL) return `${source}_${originalOrderId}`;
   throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
 
@@ -564,7 +645,8 @@ const filterPurchases = (logKey, purchases, appId) => {
 const data = {
   saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
-  deleteAll, parseData, filterPurchases,
+  getUpdatedPurchases, getPurchaseExtras, deleteAll,
+  parseData, getPurchaseId, filterPurchases,
 };
 
 export default data;

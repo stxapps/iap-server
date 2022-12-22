@@ -25,6 +25,7 @@ export const APPLE_ROOT_CA_G3_FINGERPRINTS = [
 export const APPSTORE = 'AppStore';
 export const PLAYSTORE = 'PlayStore';
 //export const PADDLE = 'Paddle';
+export const MANUAL = 'Manual';
 
 export const SOURCES = [APPSTORE, PLAYSTORE];
 
@@ -56,6 +57,7 @@ export const NOTIFY_LOG = 'NotifyLog';
 export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
 export const PURCHASE = 'Purchase';
+export const PURCHASE_EXTRA = 'PurchaseExtra';
 export const PURCHASE_USER = 'PurchaseUser';
 
 // Status
