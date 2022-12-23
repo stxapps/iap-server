@@ -76,7 +76,7 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     key: purchaseKey,
     data: derivePurchaseEntityData(
       source, productId, parsedData.orderId, token, parsedData.originalOrderId,
-      parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
+      parsedData.status, parsedData.expiryDate, parsedData.endDate, date
     ),
   }
 
@@ -169,6 +169,8 @@ const invalidatePurchase = async (
 
   // Idempotent!
 
+  const date = new Date();
+
   const oldPurchaseId = getPurchaseId(
     logKey, source, linkedToken, parsedData.originalOrderId
   );
@@ -180,7 +182,7 @@ const invalidatePurchase = async (
     key: purchaseKey,
     data: derivePurchaseEntityData(
       source, productId, parsedData.orderId, token, parsedData.originalOrderId,
-      parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
+      parsedData.status, parsedData.expiryDate, parsedData.endDate, date
     ),
   }
 
@@ -197,12 +199,13 @@ const invalidatePurchase = async (
       oldPurchaseUserKeys.push(entity[datastore.KEY]);
 
       const purchaseUserId = `${purchaseId}_${entity.userId}`;
+      const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
       const purchaseUserEntity = {
-        key: datastore.key([PURCHASE_USER, purchaseUserId]),
+        key: purchaseUserKey,
         data: [
           { name: 'purchaseId', value: purchaseId },
           { name: 'userId', value: entity.userId },
-          { name: 'updateDate', value: new Date() },
+          { name: 'updateDate', value: date },
         ],
       };
       purchaseUserEntities.push(purchaseUserEntity);
