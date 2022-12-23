@@ -324,6 +324,25 @@ const getPurchaseExtras = async (ids) => {
   }
 };
 
+const getUpdatedPurchaseUsers = async (updateDate) => {
+  const transaction = datastore.transaction({ readOnly: true });
+  try {
+    await transaction.run();
+
+    const query = datastore.createQuery(PURCHASE_USER);
+    query.filter('updateDate', '>=', updateDate);
+    query.limit(800);
+    const [entities] = await transaction.runQuery(query);
+
+    await transaction.commit();
+
+    return entities.map(entity => derivePurchaseUserData(entity));
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+};
+
 // Error because no DataStore index found! Use purchases.json locally instead.
 /*const getReverifiedPurchases = async () => {
   const transaction = datastore.transaction({ readOnly: true });
@@ -527,6 +546,14 @@ const derivePurchaseExtraData = (purchaseExtraEntity) => {
   };
 };
 
+const derivePurchaseUserData = (purchaseUserEntity) => {
+  return {
+    purchaseId: purchaseUserEntity.purchaseId,
+    userId: purchaseUserEntity.userId,
+    updateDate: purchaseUserEntity.updateDate,
+  };
+};
+
 const parseData = (logKey, source, data) => {
   // Parse verifyData or notifyData to parsedData
   const parsedData = {};
@@ -659,7 +686,7 @@ const filterPurchases = (logKey, purchases, appId) => {
 const data = {
   saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
   addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
-  getUpdatedPurchases, getPurchaseExtras, deleteAll,
+  getUpdatedPurchases, getPurchaseExtras, getUpdatedPurchaseUsers, deleteAll,
   parseData, getPurchaseId, filterPurchases,
 };
 

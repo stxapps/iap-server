@@ -11,7 +11,7 @@
     "start": "node --experimental-specifier-resolution=node src/index.js",
     "start-local": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json nodemon --experimental-specifier-resolution=node src/index.js",
     "deploy": "gcloud app deploy --no-promote --project=iap-001",
-    "report": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --experimental-specifier-resolution=node src/report.js ~/Drive/tmp/purchases.json",
+    "report": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --experimental-specifier-resolution=node src/report.js ~/Drive/tmp/purchases.json ~/Drive/tmp/purchase-users.json",
     "reverify": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --experimental-specifier-resolution=node src/reverify.js"
   },
   "dependencies": {
