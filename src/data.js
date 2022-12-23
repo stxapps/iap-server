@@ -79,15 +79,19 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
       parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
   }
+
+  const purchaseExtraKey = datastore.key([PURCHASE_EXTRA, purchaseId]);
   const purchaseExtraEntity = {
-    key: datastore.key([PURCHASE_EXTRA, purchaseId]),
+    key: purchaseExtraKey,
     data: [
       { name: 'createDate', value: date },
     ],
   };
+
   const purchaseUserId = `${purchaseId}_${userId}`;
+  const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
   const purchaseUserEntity = {
-    key: datastore.key([PURCHASE_USER, purchaseUserId]),
+    key: purchaseUserKey,
     data: [
       { name: 'purchaseId', value: purchaseId },
       { name: 'userId', value: userId },
@@ -98,7 +102,14 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
   const transaction = datastore.transaction();
   try {
     await transaction.run();
-    transaction.save([purchaseEntity, purchaseExtraEntity, purchaseUserEntity]);
+
+    const [oldPurchaseExtraEntity] = await transaction.get(purchaseExtraKey);
+    if (oldPurchaseExtraEntity) {
+      transaction.save([purchaseEntity, purchaseUserEntity]);
+    } else {
+      transaction.save([purchaseEntity, purchaseExtraEntity, purchaseUserEntity]);
+    }
+
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
