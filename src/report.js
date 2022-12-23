@@ -41,10 +41,15 @@ const getPurchases = async () => {
     }
 
     // For now, get extras only newly added purchases as there is only createDate.
-    const _purchaseExtras = await dataApi.getPurchaseExtras(purchaseIds);
     const purchaseExtras = {};
-    for (const extra of _purchaseExtras) {
-      purchaseExtras[extra.keyName] = { createDate: extra.createDate };
+    const _purchaseExtras = await dataApi.getPurchaseExtras(purchaseIds);
+    for (const _purchaseExtra of _purchaseExtras) {
+      const purchaseExtra = {};
+      for (const key in _purchaseExtra) {
+        if (key === 'keyName') continue;
+        purchaseExtra[key] = _purchaseExtra[key];
+      }
+      purchaseExtras[_purchaseExtra.keyName] = purchaseExtra;
     }
 
     for (const purchase of updatedPurchases) {
