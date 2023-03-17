@@ -198,6 +198,8 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
 
+  let purchaseEntity, paddleEntity;
+
   const transaction = datastore.transaction();
   try {
     await transaction.run();
@@ -213,7 +215,7 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
     const oldPurchase = derivePurchaseData(oldPurchaseEntity, null, oldPaddleEntity);
     const purchase = { ...oldPurchase, ...purchaseData };
 
-    const purchaseEntity = {
+    purchaseEntity = {
       key: purchaseKey,
       data: derivePurchaseEntityData(
         purchase.source, purchase.productId, purchase.orderId, purchase.token,
@@ -221,7 +223,7 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
         new Date()
       ),
     };
-    const paddleEntity = {
+    paddleEntity = {
       key: paddleKey,
       data: derivePurchasePaddleEntityData(
         purchase.paddleUserId, purchase.passthrough, purchase.receiptUrl,
@@ -235,6 +237,8 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
     await transaction.rollback();
     throw error;
   }
+
+  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
 };
 
 const invalidatePurchase = async (

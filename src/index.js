@@ -475,7 +475,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
         continue;
       }
 
-      const parsedData = dataApi.parsePartialData(logKey, verifyData);
+      const parsedData = dataApi.parsePartialData(logKey, source, verifyData);
       updatedPurchase = await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
       console.log(`(${logKey}) Saved to Datastore`);
     } else if (source === MANUAL) {

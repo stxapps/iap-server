@@ -84,7 +84,11 @@ const verifySubscription = async (logKey, userId, productId, token, paddleUserId
     [doSandbox, tResult] = [false, res.data];
 
     if (
-      isObject(tResult) && isObject(tResult.error) && tResult.error.code === 101
+      isObject(tResult) &&
+      (
+        (isObject(tResult.error) && tResult.error.code === 101) ||
+        (Array.isArray(tResult.response) && tResult.response.length === 0)
+      )
     ) {
       const res = await axios.post(getTransactionsUrl(true, paddleUserId), {
         vendor_id: getVendor(true), vendor_auth_code: getAuthCode(true),
