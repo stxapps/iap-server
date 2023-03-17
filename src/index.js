@@ -5,9 +5,10 @@ import { verifyECDSA } from '@stacks/encryption';
 
 import appstore from './appstore';
 import playstore from './playstore';
+import paddle from './paddle';
 import dataApi from './data';
 import {
-  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, MANUAL, PRODUCT_IDS, APP_IDS,
+  ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PADDLE, MANUAL, PRODUCT_IDS, APP_IDS,
   VALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
@@ -53,7 +54,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const { source, userId, productId, token } = reqBody;
+  const { source, userId, productId, token, paddleUserId } = reqBody;
   if (!SOURCES.includes(source)) {
     console.log(`(${logKey}) Invalid source, return ERROR`);
     results.status = ERROR;
@@ -116,6 +117,30 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       );
       console.log(`(${logKey}) Called invalidatePurchase before addPurchase`);
     }
+    purchase = await dataApi.addPurchase(
+      logKey, source, userId, productId, token, parsedData,
+    );
+    console.log(`(${logKey}) Saved to Datastore`);
+  } else if (source === PADDLE) {
+    if (!isString(paddleUserId)) {
+      console.log(`(${logKey}) Invalid paddleUserId, return ERROR`);
+      results.status = ERROR;
+      res.send(JSON.stringify(results));
+      return;
+    }
+
+    const verifyResult = await paddle.verifySubscription(
+      logKey, userId, productId, token, paddleUserId,
+    );
+
+    const { status, verifyData } = verifyResult;
+    results.status = status;
+    if (results.status !== VALID) {
+      res.send(JSON.stringify(results));
+      return;
+    }
+
+    const parsedData = dataApi.parseData(logKey, source, verifyData);
     purchase = await dataApi.addPurchase(
       logKey, source, userId, productId, token, parsedData,
     );
@@ -247,6 +272,81 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
   res.status(200).end();
 }));
 
+app.options('/paddle/notify', cors(sCorsOptions));
+app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
+  const logKey = randomString(12);
+  console.log(`(${logKey}) /paddle/notify receives a post request`);
+
+  const reqBody = req.body;
+  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody) || !reqBody.subscription_id || !reqBody.p_signature) {
+    console.log(`(${logKey}) Invalid reqBody, just end`);
+    res.status(200).end();
+    return;
+  }
+
+  const verifyResult = await paddle.verifyNotification(logKey, reqBody);
+  if (!verifyResult) {
+    console.log(`(${logKey}) verifyResult is false, just end`);
+    res.status(200).end();
+    return;
+  }
+
+  const parsedData = await paddle.parseNotification(logKey, reqBody);
+
+  await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
+  console.log(`(${logKey}) Saved to Datastore`);
+
+  console.log(`(${logKey}) /paddle/notify finished`);
+  res.status(200).end();
+}));
+
+app.options('/paddle/pre', cors(cCorsOptions));
+app.post('/paddle/pre', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+  const logKey = randomString(12);
+  console.log(`(${logKey}) /paddle/pre receives a post request`);
+
+  const results = { status: VALID };
+
+  const referrer = getReferrer(req);
+  console.log(`(${logKey}) Referrer: ${referrer}`);
+  if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
+    console.log(`(${logKey}) Invalid referrer, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const reqBody = req.body;
+  console.log(`(${logKey}) Request body: ${JSON.stringify(reqBody)}`);
+  if (!isObject(reqBody)) {
+    console.log(`(${logKey}) Invalid reqBody, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  const { userId, randomId } = reqBody;
+  if (!isString(userId)) {
+    console.log(`(${logKey}) Invalid userId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+  if (!isString(randomId)) {
+    console.log(`(${logKey}) Invalid randomId, return ERROR`);
+    results.status = ERROR;
+    res.send(JSON.stringify(results));
+    return;
+  }
+
+  await dataApi.addPaddlePre(logKey, userId, randomId);
+  console.log(`(${logKey}) Saved to Datastore`);
+
+  console.log(`(${logKey}) /paddle/pre finished`);
+  res.status(200).end();
+}));
+
 app.options('/status', cors(cCorsOptions));
 app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
@@ -313,7 +413,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
   const statuses = [], updatedPurchases = [];
   for (const purchase of purchases) {
-    const { source, productId, token } = purchase;
+    const { source, productId, token, paddleUserId } = purchase;
 
     let updatedPurchase;
     if (source === APPSTORE) {
@@ -362,6 +462,21 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
           logKey, PLAYSTORE, productId, token, parsedData,
         );
       }
+      console.log(`(${logKey}) Saved to Datastore`);
+    } else if (source === PADDLE) {
+      const verifyResult = await paddle.verifySubscription(
+        logKey, userId, productId, token, paddleUserId,
+      );
+
+      const { status, verifyData } = verifyResult;
+      if (status !== VALID) {
+        statuses.push(status);
+        updatedPurchases.push(null);
+        continue;
+      }
+
+      const parsedData = dataApi.parsePartialData(logKey, verifyData);
+      updatedPurchase = await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
       console.log(`(${logKey}) Saved to Datastore`);
     } else if (source === MANUAL) {
       updatedPurchase = purchase;

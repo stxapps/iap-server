@@ -1,11 +1,11 @@
 import { Datastore } from '@google-cloud/datastore';
 
 import {
-  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PURCHASE, PURCHASE_EXTRA, PURCHASE_USER,
-  APPSTORE, PLAYSTORE, MANUAL, ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED,
-  UNKNOWN,
+  VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PADDLE_PRE, PADDLE, PURCHASE, PURCHASE_EXTRA,
+  PURCHASE_PADDLE, PURCHASE_USER, APPSTORE, PLAYSTORE, MANUAL, ACTIVE, NO_RENEW, GRACE,
+  ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
-import { getAppId } from './utils';
+import { getAppId, isObject } from './utils';
 
 const datastore = new Datastore();
 
@@ -64,6 +64,14 @@ const saveAcknowledgeLog = async (
   // Columns: userId, purchaseId, status, askId, responseId, updateDate
 };*/
 
+const addPaddlePre = async (logKey, userId, randomId) => {
+  const preData = [
+    { name: 'userId', value: userId },
+    { name: 'randomId', value: randomId },
+  ];
+  await datastore.save({ key: datastore.key([PADDLE_PRE]), data: preData });
+};
+
 const addPurchase = async (logKey, source, userId, productId, token, parsedData) => {
   // Purchase's columns: source, productId, orderId, token, status, expiryDate, endDate, updateDate
   // User's columns: purchaseId, userId
@@ -80,43 +88,49 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     ),
   }
 
-  const purchaseExtraKey = datastore.key([PURCHASE_EXTRA, purchaseId]);
-  const purchaseExtraEntity = {
-    key: purchaseExtraKey,
-    data: [
-      { name: 'createDate', value: date },
-    ],
+  const extraKey = datastore.key([PURCHASE_EXTRA, purchaseId]);
+  const extraEntity = {
+    key: extraKey, data: derivePurchaseExtraEntityData(date),
   };
+
+  let paddleEntity = null;
+  if (source === PADDLE) {
+    const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
+    paddleEntity = {
+      key: paddleKey,
+      data: derivePurchasePaddleEntityData(
+        parsedData.paddleUserId, parsedData.passthrough, parsedData.receiptUrl,
+        parsedData.updateUrl, parsedData.cancelUrl
+      ),
+    };
+  }
 
   const purchaseUserId = `${purchaseId}_${userId}`;
   const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
   const purchaseUserEntity = {
     key: purchaseUserKey,
-    data: [
-      { name: 'purchaseId', value: purchaseId },
-      { name: 'userId', value: userId },
-      { name: 'updateDate', value: date },
-    ],
+    data: derivePurchaseUserEntitiyData(purchaseId, userId, date),
   };
 
   const transaction = datastore.transaction();
   try {
     await transaction.run();
 
-    const [oldPurchaseExtraEntity] = await transaction.get(purchaseExtraKey);
-    if (oldPurchaseExtraEntity) {
-      transaction.save([purchaseEntity, purchaseUserEntity]);
-    } else {
-      transaction.save([purchaseEntity, purchaseExtraEntity, purchaseUserEntity]);
-    }
+    const entities = [purchaseEntity, purchaseUserEntity];
 
+    const [oldExtraEntity] = await transaction.get(extraKey);
+    if (!oldExtraEntity) entities.push(extraEntity);
+
+    if (source === PADDLE) entities.push(paddleEntity);
+
+    transaction.save(entities);
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
 
-  return derivePurchaseDataFromRaw(purchaseEntity);
+  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
 };
 
 /*const addUser = async () => {
@@ -137,6 +151,18 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
     ),
   }
 
+  let paddleEntity = null;
+  if (source === PADDLE) {
+    const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
+    paddleEntity = {
+      key: paddleKey,
+      data: derivePurchasePaddleEntityData(
+        parsedData.paddleUserId, parsedData.passthrough, parsedData.receiptUrl,
+        parsedData.updateUrl, parsedData.cancelUrl
+      ),
+    };
+  }
+
   const transaction = datastore.transaction();
   try {
     await transaction.run();
@@ -149,14 +175,66 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
       console.log(`(${logKey}) Update purchase without existing purchase for purchaseId: ${purchaseId}`);
     }
 
-    transaction.save(purchaseEntity);
+    const entities = [purchaseEntity];
+    if (source === PADDLE) entities.push(paddleEntity);
+
+    transaction.save(entities);
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
 
-  return derivePurchaseDataFromRaw(purchaseEntity);
+  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
+};
+
+const updatePartialPurchase = async (logKey, source, parsedData) => {
+  if (source !== PADDLE) {
+    throw new Error(`(${logKey}) Only support PADDLE for now`);
+  }
+
+  const { purchaseId, purchaseData } = parsedData;
+
+  const purchaseKey = datastore.key([PURCHASE, purchaseId]);
+  const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
+
+  const transaction = datastore.transaction();
+  try {
+    await transaction.run();
+
+    const [oldEntities] = await transaction.get([purchaseKey, paddleKey]);
+    const [oldPurchaseEntity, oldPaddleEntity] = oldEntities;
+    if (!oldPurchaseEntity || !oldPaddleEntity) {
+      // not found just return.
+      console.log(`(${logKey}) In updatePartialPurchase, not found entities`);
+      return;
+    }
+
+    const oldPurchase = derivePurchaseData(oldPurchaseEntity, null, oldPaddleEntity);
+    const purchase = { ...oldPurchase, ...purchaseData };
+
+    const purchaseEntity = {
+      key: purchaseKey,
+      data: derivePurchaseEntityData(
+        purchase.source, purchase.productId, purchase.orderId, purchase.token,
+        purchase.originalOrderId, purchase.status, purchase.expiryDate, purchase.endDate,
+        new Date()
+      ),
+    };
+    const paddleEntity = {
+      key: paddleKey,
+      data: derivePurchasePaddleEntityData(
+        purchase.paddleUserId, purchase.passthrough, purchase.receiptUrl,
+        purchase.updateUrl, purchase.cancelUrl
+      ),
+    };
+
+    transaction.save([purchaseEntity, paddleEntity]);
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 };
 
 const invalidatePurchase = async (
@@ -175,9 +253,12 @@ const invalidatePurchase = async (
     logKey, source, linkedToken, parsedData.originalOrderId
   );
   const oldPurchaseKey = datastore.key([PURCHASE, oldPurchaseId]);
+  const oldExtraKey = datastore.key([PURCHASE_EXTRA, oldPurchaseId]);
 
   const purchaseId = getPurchaseId(logKey, source, token, parsedData.originalOrderId);
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
+  const extraKey = datastore.key([PURCHASE_EXTRA, purchaseId]);
+
   const purchaseEntity = {
     key: purchaseKey,
     data: derivePurchaseEntityData(
@@ -190,30 +271,37 @@ const invalidatePurchase = async (
   try {
     await transaction.run();
 
+    const oldKeys = [oldPurchaseKey];
+    const entities = [purchaseEntity];
+
+    const [oldExtraEntity] = await transaction.get(oldExtraKey);
+    if (oldExtraEntity) {
+      const extraEntity = {
+        key: extraKey, data: derivePurchaseExtraEntityData(oldExtraEntity.createDate),
+      }
+
+      oldKeys.push(oldExtraKey);
+      entities.push(extraEntity);
+    }
+
     const query = datastore.createQuery(PURCHASE_USER);
     query.filter('purchaseId', '=', oldPurchaseId);
     const [oldPurchaseUserEntities] = await transaction.runQuery(query);
 
-    const oldPurchaseUserKeys = [], purchaseUserEntities = [];
     for (const entity of oldPurchaseUserEntities) {
-      oldPurchaseUserKeys.push(entity[datastore.KEY]);
+      oldKeys.push(entity[datastore.KEY]);
 
       const purchaseUserId = `${purchaseId}_${entity.userId}`;
       const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
       const purchaseUserEntity = {
         key: purchaseUserKey,
-        data: [
-          { name: 'purchaseId', value: purchaseId },
-          { name: 'userId', value: entity.userId },
-          { name: 'updateDate', value: date },
-        ],
+        data: derivePurchaseUserEntitiyData(purchaseId, entity.userId, date),
       };
-      purchaseUserEntities.push(purchaseUserEntity);
+      entities.push(purchaseUserEntity);
     }
 
-    transaction.delete([oldPurchaseKey, ...oldPurchaseUserKeys]);
-    transaction.save([purchaseEntity, ...purchaseUserEntities]);
-
+    transaction.delete(oldKeys);
+    transaction.save(entities);
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
@@ -221,37 +309,6 @@ const invalidatePurchase = async (
   }
 
   return derivePurchaseDataFromRaw(purchaseEntity);
-};
-
-const getPurchase = async (logKey, source, token, originalOrderId) => {
-  const purchaseId = getPurchaseId(logKey, source, token, originalOrderId);
-  const purchaseKey = datastore.key([PURCHASE, purchaseId]);
-
-  const transaction = datastore.transaction({ readOnly: true });
-  try {
-    await transaction.run();
-
-    const [purchaseEntity] = await transaction.get(purchaseKey);
-
-    const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('purchaseId', '=', purchaseId);
-    const [purchaseUserEntities] = await transaction.runQuery(query);
-
-    await transaction.commit();
-
-    if (!purchaseEntity) return null;
-
-    const userIds = [];
-    for (const entity of purchaseUserEntities) {
-      if (userIds.includes(entity.userId)) continue;
-      userIds.push(entity.userId);
-    }
-
-    return { ...derivePurchaseData(purchaseEntity), userIds };
-  } catch (e) {
-    await transaction.rollback();
-    throw e;
-  }
 };
 
 const getPurchases = async (logKey, userId) => {
@@ -275,9 +332,24 @@ const getPurchases = async (logKey, userId) => {
       [purchaseEntities] = await transaction.get(purchaseKeys);
     }
 
+    const paddleIds = [];
+    for (const entity of purchaseEntities) {
+      if (entity.source === PADDLE) {
+        const paddleId = entity[datastore.KEY].name;
+        if (!paddleIds.includes(paddleId)) paddleIds.push(paddleId);
+      }
+    }
+    const paddleKeys = paddleIds.map(id => datastore.key([PURCHASE_PADDLE, id]));
+
+    let paddleEntities = [];
+    if (paddleKeys.length > 0) {
+      [paddleEntities] = await transaction.get(paddleKeys);
+    }
+
     await transaction.commit();
 
-    return purchaseEntities.map(purchaseEntity => derivePurchaseData(purchaseEntity));
+    // Bug Alert: No PurchaseExtra, no createDate!
+    return formPurchaseData(purchaseEntities, null, paddleEntities);
   } catch (e) {
     await transaction.rollback();
     throw e;
@@ -294,30 +366,30 @@ const getUpdatedPurchases = async (updateDate) => {
     query.limit(800);
     const [purchaseEntities] = await transaction.runQuery(query);
 
-    await transaction.commit();
+    const purchaseIds = [], paddleIds = [];
+    for (const entity of purchaseEntities) {
+      const purchaseId = entity[datastore.KEY].name;
+      if (!purchaseIds.includes(purchaseId)) purchaseIds.push(purchaseId);
+      if (entity.source === PADDLE) {
+        if (!paddleIds.includes(purchaseId)) paddleIds.push(purchaseId);
+      }
+    }
+    const extraKeys = purchaseIds.map(id => datastore.key([PURCHASE_EXTRA, id]));
+    const paddleKeys = paddleIds.map(id => datastore.key([PURCHASE_PADDLE, id]));
 
-    return purchaseEntities.map(purchaseEntity => derivePurchaseData(purchaseEntity));
-  } catch (e) {
-    await transaction.rollback();
-    throw e;
-  }
-};
+    let extraEntities = [];
+    if (extraKeys.length > 0) {
+      [extraEntities] = await transaction.get(extraKeys);
+    }
 
-const getPurchaseExtras = async (ids) => {
-  const transaction = datastore.transaction({ readOnly: true });
-  try {
-    await transaction.run();
-
-    const keys = ids.map(id => datastore.key([PURCHASE_EXTRA, id]));
-
-    let entities = [];
-    if (keys.length > 0) {
-      [entities] = await transaction.get(keys);
+    let paddleEntities = [];
+    if (paddleKeys.length > 0) {
+      [paddleEntities] = await transaction.get(paddleKeys);
     }
 
     await transaction.commit();
 
-    return entities.map(entity => derivePurchaseExtraData(entity));
+    return formPurchaseData(purchaseEntities, extraEntities, paddleEntities);
   } catch (e) {
     await transaction.rollback();
     throw e;
@@ -342,47 +414,6 @@ const getUpdatedPurchaseUsers = async (updateDate) => {
     throw e;
   }
 };
-
-// Error because no DataStore index found! Use purchases.json locally instead.
-/*const getReverifiedPurchases = async () => {
-  const transaction = datastore.transaction({ readOnly: true });
-  try {
-    await transaction.run();
-
-    const purchaseEntities = [];
-    for (const status of [ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, UNKNOWN]) {
-      const query = datastore.createQuery(PURCHASE);
-      query.filter('status', '=', status);
-      query.filter('endDate', '<', new Date());
-      query.limit(800);
-      const [_purchaseEntities] = await transaction.runQuery(query);
-      purchaseEntities.push(..._purchaseEntities);
-    }
-
-    await transaction.commit();
-
-    return purchaseEntities.map(purchaseEntity => derivePurchaseData(purchaseEntity));
-  } catch (e) {
-    await transaction.rollback();
-    throw e;
-  }
-};*/
-
-/*const getExpiredSubscriptions = () => new Promise((resolve, reject) => {
-  const query = datastore.createQuery(PURCHASE);
-  query.filter('expiryDate', '<', new Date());
-  query.filter('status', '=', ACTIVE);
-  query.limit(800);
-  datastore.runQuery(query, (err, entities) => {
-    if (err) reject(err);
-    else resolve(entities)
-  });
-});
-
-const expireSubscriptions = async () => {
-  const expiredSubscription = await getExpiredSubscriptions();
-
-};*/
 
 const deleteVerifyLogs = async (logKey, userId, appId) => {
   const transaction = datastore.transaction();
@@ -508,9 +539,37 @@ const derivePurchaseEntityData = (
   ];
 };
 
-const derivePurchaseData = (purchaseEntity) => {
+const derivePurchaseExtraEntityData = (createDate) => {
+  return [
+    { name: 'createDate', value: createDate },
+  ];
+};
+
+const derivePurchasePaddleEntityData = (
+  paddleUserId, passthrough, receiptUrl, updateUrl, cancelUrl
+) => {
+  return [
+    { name: 'paddleUserId', value: paddleUserId },
+    { name: 'passthrough', value: passthrough },
+    { name: 'receiptUrl', value: receiptUrl },
+    { name: 'updateUrl', value: updateUrl },
+    { name: 'cancelUrl', value: cancelUrl },
+  ];
+};
+
+const derivePurchaseUserEntitiyData = (purchaseId, userId, updateDate) => {
+  return [
+    { name: 'purchaseId', value: purchaseId },
+    { name: 'userId', value: userId },
+    { name: 'updateDate', value: updateDate },
+  ];
+};
+
+const derivePurchaseData = (
+  purchaseEntity, extraEntity = null, paddleEntity = null
+) => {
   // Derive purchase data from queried purchase entity
-  return {
+  const purchase = {
     source: purchaseEntity.source,
     productId: purchaseEntity.productId,
     orderId: purchaseEntity.orderId,
@@ -521,12 +580,28 @@ const derivePurchaseData = (purchaseEntity) => {
     endDate: purchaseEntity.endDate,
     updateDate: purchaseEntity.updateDate,
   };
+
+  if (isObject(extraEntity)) {
+    purchase.createDate = extraEntity.createDate;
+  }
+
+  if (isObject(paddleEntity)) {
+    purchase.paddleUserId = paddleEntity.paddleUserId;
+    purchase.passthrough = paddleEntity.passthrough;
+    purchase.receiptUrl = paddleEntity.receiptUrl;
+    purchase.updateUrl = paddleEntity.updateUrl;
+    purchase.cancelUrl = paddleEntity.cancelUrl;
+  }
+
+  return purchase;
 };
 
-const derivePurchaseDataFromRaw = (purchaseEntity) => {
+const derivePurchaseDataFromRaw = (
+  purchaseEntity, extraEntity = null, paddleEntity = null
+) => {
   // Derive purchase data from raw purchase entity
   const data = purchaseEntity.data;
-  return {
+  const purchase = {
     source: data[0].value,
     productId: data[1].value,
     orderId: data[2].value,
@@ -537,13 +612,48 @@ const derivePurchaseDataFromRaw = (purchaseEntity) => {
     endDate: data[7].value,
     updateDate: data[8].value,
   };
+
+  if (isObject(extraEntity)) {
+    purchase.createDate = extraEntity.data[0].value;
+  }
+
+  if (isObject(paddleEntity)) {
+    purchase.paddleUserId = paddleEntity.data[0].value;
+    purchase.passthrough = paddleEntity.data[1].value;
+    purchase.receiptUrl = paddleEntity.data[2].value;
+    purchase.updateUrl = paddleEntity.data[3].value;
+    purchase.cancelUrl = paddleEntity.data[4].value;
+  }
+
+  return purchase;
 };
 
-const derivePurchaseExtraData = (purchaseExtraEntity) => {
-  return {
-    keyName: purchaseExtraEntity[datastore.KEY].name,
-    createDate: purchaseExtraEntity.createDate,
-  };
+const formPurchaseData = (purchaseEntities, extraEntities, paddleEntities) => {
+  const extraMap = {};
+  if (Array.isArray(extraEntities)) {
+    for (const entity of extraEntities) {
+      extraMap[entity[datastore.KEY].name] = entity;
+    }
+  }
+
+  const paddleMap = {};
+  if (Array.isArray(paddleEntities)) {
+    for (const entity of paddleEntities) {
+      paddleMap[entity[datastore.KEY].name] = entity;
+    }
+  }
+
+  const purchases = [];
+  for (const entity of purchaseEntities) {
+    const purchaseId = entity[datastore.KEY].name;
+
+    let extraEntity = null, paddleEntity = null;
+    if (purchaseId in extraMap) extraEntity = extraMap[purchaseId];
+    if (purchaseId in paddleMap) paddleEntity = paddleMap[purchaseId];
+    purchases.push(derivePurchaseData(entity, extraEntity, paddleEntity));
+  }
+
+  return purchases;
 };
 
 const derivePurchaseUserData = (purchaseUserEntity) => {
@@ -552,6 +662,17 @@ const derivePurchaseUserData = (purchaseUserEntity) => {
     userId: purchaseUserEntity.userId,
     updateDate: purchaseUserEntity.updateDate,
   };
+};
+
+const _validateStatus = (logKey, endDate, status) => {
+  const now = Date.now();
+  const endDT = endDate.getTime();
+  if (now <= endDT && ![ACTIVE, NO_RENEW, GRACE].includes(status)) {
+    console.log(`(${logKey}) Found future endDate with inconsistent status: ${status}`);
+  }
+  if (now > endDT && ![ON_HOLD, PAUSED, EXPIRED].includes(status)) {
+    console.log(`(${logKey}) Found past endDate with inconsistent status: ${status}`);
+  }
 };
 
 const parseData = (logKey, source, data) => {
@@ -577,18 +698,51 @@ const parseData = (logKey, source, data) => {
     parsedData.status = parseStatus(logKey, source, data);
     parsedData.expiryDate = expiryDate;
     parsedData.endDate = expiryDate;
+  } else if (source === PADDLE) {
+    const expiryDate = new Date(data.payment.payoutDT);
+
+    parsedData.productId = data.productId;
+    parsedData.orderId = data.order_id + '';
+    parsedData.originalOrderId = data.subscription.subscription_id + '';
+    parsedData.status = parseStatus(logKey, source, data);
+    parsedData.expiryDate = expiryDate;
+    parsedData.endDate = expiryDate;
+    parsedData.paddleUserId = data.user.user_id + '';
+    parsedData.passthrough = data.passthrough;
+    parsedData.receiptUrl = data.receipt_url;
+    parsedData.updateUrl = null;
+    parsedData.cancelUrl = null;
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
-  const now = Date.now();
-  const endDT = parsedData.endDate.getTime();
-  if (now <= endDT && ![ACTIVE, NO_RENEW, GRACE].includes(parsedData.status)) {
-    console.log(`(${logKey}) Found future endDate with inconsistent status: ${parsedData.status}`);
-  }
-  if (now > endDT && ![ON_HOLD, PAUSED, EXPIRED].includes(parsedData.status)) {
-    console.log(`(${logKey}) Found past endDate with inconsistent status: ${parsedData.status}`);
-  }
+  _validateStatus(logKey, parsedData.endDate, parsedData.status);
 
   return parsedData;
+};
+
+const parsePartialData = (logKey, source, data) => {
+  // Parse verifyData or notifyData to parsedData
+  let purchaseId, purchaseData = {};
+  if (source === PADDLE) {
+    const originalOrderId = data.subscription.subscription_id + '';
+    purchaseId = getPurchaseId(logKey, PADDLE, null, originalOrderId);
+
+    const expiryDate = new Date(data.payment.payoutDT);
+
+    purchaseData.productId = data.productId;
+    purchaseData.orderId = data.order_id + '';
+    purchaseData.originalOrderId = originalOrderId;
+    purchaseData.status = parseStatus(logKey, source, data);
+    purchaseData.expiryDate = expiryDate;
+    purchaseData.endDate = expiryDate;
+
+    purchaseData.paddleUserId = data.user.user_id + '';
+    purchaseData.passthrough = data.passthrough;
+    purchaseData.receiptUrl = data.receipt_url;
+  } else throw new Error(`(${logKey}) Invalid source: ${source}`);
+
+  _validateStatus(logKey, purchaseData.endDate, purchaseData.status);
+
+  return { purchaseId, purchaseData };
 };
 
 const parseStatus = (logKey, source, data) => {
@@ -645,12 +799,25 @@ const parseStatus = (logKey, source, data) => {
 
     console.log(`(${logKey}) Unknown status`);
     return UNKNOWN;
+  } else if (source === PADDLE) {
+    if (['active', 'trialing'].includes(data.subscription.status)) {
+      if (data.payment.payoutDT < now) return NO_RENEW;
+      return ACTIVE;
+    } else if (data.subscription.status === 'past_due') {
+      return GRACE;
+    } else if (data.subscription.status === 'deleted') {
+      return EXPIRED;
+    }
+
+    console.log(`(${logKey}) Unknown status`);
+    return UNKNOWN;
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
 
 const getPurchaseId = (logKey, source, token, originalOrderId) => {
   if (source === APPSTORE) return `${source}_${originalOrderId}`;
   if (source === PLAYSTORE) return `${source}_${token}`;
+  if (source === PADDLE) return `${source}_${originalOrderId}`;
   if (source === MANUAL) return `${source}_${originalOrderId}`;
   throw new Error(`(${logKey}) Invalid source: ${source}`);
 };
@@ -684,10 +851,10 @@ const filterPurchases = (logKey, purchases, appId) => {
 };
 
 const data = {
-  saveVerifyLog, saveNotifyLog, saveAcknowledgeLog,
-  addPurchase, updatePurchase, invalidatePurchase, getPurchase, getPurchases,
-  getUpdatedPurchases, getPurchaseExtras, getUpdatedPurchaseUsers, deleteAll,
-  parseData, getPurchaseId, filterPurchases,
+  saveVerifyLog, saveNotifyLog, saveAcknowledgeLog, addPaddlePre, addPurchase,
+  updatePurchase, updatePartialPurchase, invalidatePurchase, getPurchases,
+  getUpdatedPurchases, getUpdatedPurchaseUsers, deleteAll, parseData, parsePartialData,
+  parseStatus, getPurchaseId, filterPurchases,
 };
 
 export default data;

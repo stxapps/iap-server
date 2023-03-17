@@ -24,10 +24,10 @@ export const APPLE_ROOT_CA_G3_FINGERPRINTS = [
 // Source
 export const APPSTORE = 'AppStore';
 export const PLAYSTORE = 'PlayStore';
-//export const PADDLE = 'Paddle';
+export const PADDLE = 'Paddle';
 export const MANUAL = 'Manual';
 
-export const SOURCES = [APPSTORE, PLAYSTORE];
+export const SOURCES = [APPSTORE, PLAYSTORE, PADDLE];
 
 // App id
 export const COM_BRACEDOTTO = 'com.bracedotto';
@@ -56,8 +56,11 @@ export const VERIFY_LOG = 'VerifyLog';
 export const NOTIFY_LOG = 'NotifyLog';
 export const ACKNOWLEDGE_LOG = 'AcknowledgeLog';
 
+export const PADDLE_PRE = 'PaddlePre';
+
 export const PURCHASE = 'Purchase';
 export const PURCHASE_EXTRA = 'PurchaseExtra';
+export const PURCHASE_PADDLE = 'PurchasePaddle';
 export const PURCHASE_USER = 'PurchaseUser';
 
 // Status
