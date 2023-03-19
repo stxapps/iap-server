@@ -179,14 +179,30 @@ const verifySubscription = async (logKey, userId, productId, token, paddleUserId
   return { status: VALID, verifyData };
 };
 
-const verifyNotification = async (logKey, jsonObj) => {
-  // ref: github.com/daveagill/verify-paddle-webhook
-  const { p_signature: signature, ...otherProps } = jsonObj;
+// developer.paddle.com/webhook-reference/ZG9jOjI1MzUzOTg2-verifying-webhooks
+const ksort = (obj) => {
+  const keys = Object.keys(obj).sort();
+  const sortedObj = {};
+  for (const key of keys) {
+    sortedObj[key] = obj[key];
+  }
+  return sortedObj;
+};
 
-  const sorted = {};
-  for (const k of Object.keys(otherProps).sort()) {
-    const v = otherProps[k];
-    sorted[k] = v == null ? null : v.toString();
+const validateWebhook = (reqBody, doSandbox) => {
+  let jsonObj = { ...reqBody };
+  const mySig = Buffer.from(jsonObj.p_signature, 'base64');
+
+  delete jsonObj.p_signature;
+  jsonObj = ksort(jsonObj);
+  for (const property in jsonObj) {
+    if (jsonObj.hasOwnProperty(property) && (typeof jsonObj[property]) !== "string") {
+      if (Array.isArray(jsonObj[property])) {
+        jsonObj[property] = jsonObj[property].toString();
+      } else {
+        jsonObj[property] = JSON.stringify(jsonObj[property]);
+      }
+    }
   }
 
   const serialized = serialize(jsonObj);
@@ -195,19 +211,25 @@ const verifyNotification = async (logKey, jsonObj) => {
   verifier.update(serialized);
   verifier.end();
 
+  const verification = verifier.verify(getPubKey(doSandbox), mySig);
+  return verification;
+};
+
+const verifyNotification = async (logKey, reqBody) => {
   let result = false;
   try {
-    result = verifier.verify(getPubKey(false), signature, 'base64');
+    result = validateWebhook(reqBody, false);
   } catch (error) {
     console.log(`(${logKey}) paddle.verifyNotification error: ${error}`);
   }
   if (!result) {
     try {
-      result = verifier.verify(getPubKey(true), signature, 'base64');
+      result = validateWebhook(reqBody, true);
     } catch (error) {
-      console.log(`(${logKey}) paddle.verifyNotification sandbox error: ${error}`);
+      console.log(`(${logKey}) paddle.verifyNotification sandbox error: ${error}`, error);
     }
   }
+
   return result;
 };
 
