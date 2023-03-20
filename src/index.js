@@ -9,7 +9,7 @@ import paddle from './paddle';
 import dataApi from './data';
 import {
   ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PADDLE, MANUAL, PRODUCT_IDS, APP_IDS,
-  VALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
+  VALID, INVALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
   runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
@@ -295,8 +295,10 @@ app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) 
 
   const parsedData = await paddle.parseNotification(logKey, reqBody);
 
-  await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
-  console.log(`(${logKey}) Saved to Datastore`);
+  const updatedPurchase = await dataApi.updatePartialPurchase(
+    logKey, PADDLE, parsedData
+  );
+  if (updatedPurchase) console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /paddle/notify finished`);
   res.status(200).end();
@@ -478,6 +480,11 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
 
       const parsedData = dataApi.parsePartialData(logKey, source, verifyData);
       updatedPurchase = await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
+      if (!updatedPurchase) {
+        statuses.push(INVALID);
+        updatedPurchases.push(null);
+        continue;
+      }
       console.log(`(${logKey}) Saved to Datastore`);
     } else if (source === MANUAL) {
       updatedPurchase = purchase;

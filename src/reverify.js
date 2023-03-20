@@ -65,8 +65,10 @@ const _reverify = async (logKey, purchase) => {
     }
 
     const parsedData = dataApi.parsePartialData(logKey, source, verifyData);
-    await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
-    console.log(`(${logKey}) Saved to Datastore`);
+    const updatedPurchase = await dataApi.updatePartialPurchase(
+      logKey, PADDLE, parsedData
+    );
+    if (updatedPurchase) console.log(`(${logKey}) Saved to Datastore`);
   } else {
     console.log(`(${logKey}) Found invalid source: ${source}`);
   }

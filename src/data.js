@@ -125,12 +125,12 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
 
     transaction.save(entities);
     await transaction.commit();
+
+    return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
-
-  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
 };
 
 /*const addUser = async () => {
@@ -180,12 +180,12 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
 
     transaction.save(entities);
     await transaction.commit();
+
+    return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
-
-  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
 };
 
 const updatePartialPurchase = async (logKey, source, parsedData) => {
@@ -198,8 +198,6 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
   const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
 
-  let purchaseEntity, paddleEntity;
-
   const transaction = datastore.transaction();
   try {
     await transaction.run();
@@ -209,13 +207,14 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
     if (!oldPurchaseEntity || !oldPaddleEntity) {
       // not found just return.
       console.log(`(${logKey}) In updatePartialPurchase, not found entities`);
-      return;
+      await transaction.commit();
+      return null;
     }
 
     const oldPurchase = derivePurchaseData(oldPurchaseEntity, null, oldPaddleEntity);
     const purchase = { ...oldPurchase, ...purchaseData };
 
-    purchaseEntity = {
+    const purchaseEntity = {
       key: purchaseKey,
       data: derivePurchaseEntityData(
         purchase.source, purchase.productId, purchase.orderId, purchase.token,
@@ -223,7 +222,7 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
         new Date()
       ),
     };
-    paddleEntity = {
+    const paddleEntity = {
       key: paddleKey,
       data: derivePurchasePaddleEntityData(
         purchase.paddleUserId, purchase.passthrough, purchase.receiptUrl,
@@ -233,12 +232,12 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
 
     transaction.save([purchaseEntity, paddleEntity]);
     await transaction.commit();
+
+    return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
   } catch (error) {
     await transaction.rollback();
     throw error;
   }
-
-  return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
 };
 
 const invalidatePurchase = async (
@@ -307,12 +306,12 @@ const invalidatePurchase = async (
     transaction.delete(oldKeys);
     transaction.save(entities);
     await transaction.commit();
+
+    return derivePurchaseDataFromRaw(purchaseEntity);
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
-
-  return derivePurchaseDataFromRaw(purchaseEntity);
 };
 
 const getPurchases = async (logKey, userId) => {
