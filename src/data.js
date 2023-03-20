@@ -149,7 +149,7 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
       source, productId, parsedData.orderId, token, parsedData.originalOrderId,
       parsedData.status, parsedData.expiryDate, parsedData.endDate, new Date()
     ),
-  }
+  };
 
   let paddleEntity = null;
   if (source === PADDLE) {
@@ -269,7 +269,7 @@ const invalidatePurchase = async (
       source, productId, parsedData.orderId, token, parsedData.originalOrderId,
       parsedData.status, parsedData.expiryDate, parsedData.endDate, date
     ),
-  }
+  };
 
   const transaction = datastore.transaction();
   try {
@@ -809,6 +809,8 @@ const parseStatus = (logKey, source, data) => {
       return ACTIVE;
     } else if (data.subscription.status === 'past_due') {
       return GRACE;
+    } else if (data.subscription.status === 'paused') {
+      return PAUSED;
     } else if (data.subscription.status === 'deleted') {
       return EXPIRED;
     }
