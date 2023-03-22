@@ -4,11 +4,13 @@ import { serialize } from 'php-serialize';
 
 import dataApi from './data';
 import {
-  PADDLE, VALID, INVALID, UNKNOWN, ACTIVE, NO_RENEW, COM_BRACEDOTTO_SUPPORTER,
+  PADDLE, VALID, INVALID, UNKNOWN, NO_RENEW, EXPIRED, COM_BRACEDOTTO_SUPPORTER,
   COM_JUSTNOTECC_SUPPORTER,
 } from './const';
 import { isObject } from './utils';
 import paddleKeys from './paddle-keys.json' assert { type: 'json' };
+
+const subscriptionPlans = [];
 
 const getVendor = (doSandbox) => {
   return doSandbox ? 11185 : 163987;
@@ -22,7 +24,7 @@ const getProductId = (product) => {
   if ([46920, 811082].includes(parseInt(product, 10))) {
     return COM_BRACEDOTTO_SUPPORTER;
   }
-  if ([].includes(parseInt(product, 10))) {
+  if ([46921, 811083].includes(parseInt(product, 10))) {
     return COM_JUSTNOTECC_SUPPORTER;
   }
   return null;
@@ -38,6 +40,11 @@ const getPaymentsUrl = (doSandbox) => {
   return `https://${prefix}vendors.paddle.com/api/2.0/subscription/payments`;
 };
 
+const getSubscriptionPlansUrl = (doSandbox) => {
+  const prefix = doSandbox ? 'sandbox-' : '';
+  return `https://${prefix}vendors.paddle.com/api/2.0/subscription/plans`;
+};
+
 const getPubKey = (doSandbox) => {
   return doSandbox ? paddleKeys.sandboxPubKey : paddleKeys.pubKey;
 }
@@ -47,6 +54,7 @@ const getSubscription = (subscriptions, payments) => {
   //   order_id, checkout_id, status, passthrough, product_id, ...
   //   subscription: { ... },
   //   user: { ... },
+  //   [+]
   //   payment: { ... },
   // };
   // ref: https://developer.paddle.com/api-reference/89c1805d821c2-list-transactions
@@ -66,7 +74,7 @@ const getSubscription = (subscriptions, payments) => {
   }
   subs.sort((a, b) => b.payment.payoutDT - a.payment.payoutDT);
 
-  for (const status of ['active', 'trialing', 'past_due', 'deleted']) {
+  for (const status of ['active', 'trialing', 'past_due', 'paused', 'deleted']) {
     const sub = subs.find(sub => sub.subscription.status === status);
     if (isObject(sub)) return sub;
   }
@@ -165,14 +173,40 @@ const verifySubscription = async (logKey, userId, productId, token, paddleUserId
     return { status: UNKNOWN, verifyData: null };
   }
 
+  if (subscriptionPlans.length === 0) {
+    try {
+      const res = await axios.post(getSubscriptionPlansUrl(doSandbox), {
+        vendor_id: getVendor(doSandbox),
+        vendor_auth_code: getAuthCode(doSandbox),
+      });
+
+      const plan = res.data;
+      if (isObject(plan) && 'response' in plan) {
+        subscriptionPlans.push(...plan.response);
+      } else {
+        console.log(`(${logKey}) paddle.verifySubscription getSubscriptionPlans error`, plan);
+      }
+    } catch (error) {
+      if (!error.response || !error.response.status) {
+        console.log(`(${logKey}) paddle.verifySubscription getSubscriptionPlans error`);
+      } else {
+        console.log(`(${logKey}) paddle.verifySubscription getSubscriptionPlans error: ${error.response.status}`);
+      }
+    }
+  }
+
   const subscription = getSubscription(subscriptions, payments);
   if (!isObject(subscription)) {
     console.log(`(${logKey}) No subscription from getSubscription, return INVALID`);
     return { status: INVALID, verifyData: null };
   }
 
+  const subscriptionPlan = subscriptionPlans.find(pd => {
+    return pd.id === subscription.product_id;
+  });
+
   const verifyData = {
-    ...subscription, productId: getProductId(subscription.product_id),
+    ...subscription, productId: getProductId(subscription.product_id), subscriptionPlan,
   };
   console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
 
@@ -243,6 +277,7 @@ const parseNotification = async (logKey, reqBody) => {
   }
   if ('order_id' in reqBody) purchaseData.orderId = reqBody.order_id + '';
   if ('checkout_id' in reqBody) purchaseData.token = reqBody.checkout_id;
+  purchaseData.originalOrderId = originalOrderId;
 
   let expiryDate;
   if ('cancellation_effective_date' in reqBody) {
@@ -251,15 +286,14 @@ const parseNotification = async (logKey, reqBody) => {
     expiryDate = new Date(reqBody.next_bill_date);
   }
   if (expiryDate) {
-    let status = dataApi.parseStatus(logKey, PADDLE, {
-      subscription: { status: reqBody.status },
-      payment: { payoutDT: expiryDate.getTime() },
-    });
-    if ('cancellation_effective_date' in reqBody && status === ACTIVE) {
-      status = NO_RENEW;
+    if ('status' in reqBody) {
+      purchaseData.status = dataApi.parseStatus(logKey, PADDLE, {
+        subscription: { status: reqBody.status },
+      });
+      if (purchaseData.status === EXPIRED && expiryDate.getTime() > Date.now()) {
+        purchaseData.status = NO_RENEW;
+      }
     }
-
-    purchaseData.status = status;
     purchaseData.expiryDate = expiryDate;
     purchaseData.endDate = expiryDate;
   }

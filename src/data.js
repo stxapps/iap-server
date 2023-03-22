@@ -5,7 +5,7 @@ import {
   PURCHASE_PADDLE, PURCHASE_USER, APPSTORE, PLAYSTORE, MANUAL, ACTIVE, NO_RENEW, GRACE,
   ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
-import { getAppId, isObject } from './utils';
+import { getAppId, isObject, isString, isNumber } from './utils';
 
 const datastore = new Datastore();
 
@@ -73,6 +73,10 @@ const addPaddlePre = async (logKey, userId, randomId) => {
 };
 
 const addPurchase = async (logKey, source, userId, productId, token, parsedData) => {
+  if (source === PADDLE) {
+    throw new Error(`(${logKey}) Use updatePartialPurchase for PADDLE`);
+  }
+
   // Purchase's columns: source, productId, orderId, token, status, expiryDate, endDate, updateDate
   // User's columns: purchaseId, userId
   // Not now columns: purchaseDate, startDate, trialPeriod, gracePeriod
@@ -93,18 +97,6 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     key: extraKey, data: derivePurchaseExtraEntityData(date),
   };
 
-  let paddleEntity = null;
-  if (source === PADDLE) {
-    const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
-    paddleEntity = {
-      key: paddleKey,
-      data: derivePurchasePaddleEntityData(
-        parsedData.paddleUserId, parsedData.passthrough, parsedData.receiptUrl,
-        parsedData.updateUrl, parsedData.cancelUrl
-      ),
-    };
-  }
-
   const purchaseUserId = `${purchaseId}_${userId}`;
   const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
   const purchaseUserEntity = {
@@ -121,12 +113,10 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
     const [oldExtraEntity] = await transaction.get(extraKey);
     if (!oldExtraEntity) entities.push(extraEntity);
 
-    if (source === PADDLE) entities.push(paddleEntity);
-
     transaction.save(entities);
     await transaction.commit();
 
-    return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
+    return derivePurchaseDataFromRaw(purchaseEntity, null, null);
   } catch (e) {
     await transaction.rollback();
     throw e;
@@ -138,6 +128,10 @@ const addPurchase = async (logKey, source, userId, productId, token, parsedData)
 };*/
 
 const updatePurchase = async (logKey, source, productId, token, parsedData) => {
+  if (source === PADDLE) {
+    throw new Error(`(${logKey}) Use updatePartialPurchase for PADDLE`);
+  }
+
   if (!productId) productId = parsedData.productId;
   if (!productId) throw new Error(`(${logKey}) Invalid productId: ${productId}`);
 
@@ -151,18 +145,6 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
     ),
   };
 
-  let paddleEntity = null;
-  if (source === PADDLE) {
-    const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
-    paddleEntity = {
-      key: paddleKey,
-      data: derivePurchasePaddleEntityData(
-        parsedData.paddleUserId, parsedData.passthrough, parsedData.receiptUrl,
-        parsedData.updateUrl, parsedData.cancelUrl
-      ),
-    };
-  }
-
   const transaction = datastore.transaction();
   try {
     await transaction.run();
@@ -175,51 +157,71 @@ const updatePurchase = async (logKey, source, productId, token, parsedData) => {
       console.log(`(${logKey}) Update purchase without existing purchase for purchaseId: ${purchaseId}`);
     }
 
-    const entities = [purchaseEntity];
-    if (source === PADDLE) entities.push(paddleEntity);
-
-    transaction.save(entities);
+    transaction.save([purchaseEntity]);
     await transaction.commit();
 
-    return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
+    return derivePurchaseDataFromRaw(purchaseEntity, null, null);
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
 };
 
-const updatePartialPurchase = async (logKey, source, parsedData) => {
-  if (source !== PADDLE) {
-    throw new Error(`(${logKey}) Only support PADDLE for now`);
-  }
+const updatePartialPurchase = async (
+  logKey, source, userId, productId, token, parsedData
+) => {
+  if (source !== PADDLE) throw new Error(`(${logKey}) Only support PADDLE`);
 
   const { purchaseId, purchaseData } = parsedData;
 
+  const date = new Date();
+
   const purchaseKey = datastore.key([PURCHASE, purchaseId]);
+  const defaultPurchase = {
+    source, productId, orderId: null, token, originalOrderId: null, status: null,
+    expiryDate: date, endDate: date, updateDate: date,
+    paddleUserId: null, passthrough: null, receiptUrl: null,
+    updateUrl: null, cancelUrl: null,
+  };
+
+  const extraKey = datastore.key([PURCHASE_EXTRA, purchaseId]);
+  const extraEntity = {
+    key: extraKey, data: derivePurchaseExtraEntityData(date),
+  };
+
   const paddleKey = datastore.key([PURCHASE_PADDLE, purchaseId]);
+
+  let purchaseUserEntity;
+  if (userId) {
+    const purchaseUserId = `${purchaseId}_${userId}`;
+    const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
+    purchaseUserEntity = {
+      key: purchaseUserKey,
+      data: derivePurchaseUserEntitiyData(purchaseId, userId, date),
+    };
+  }
 
   const transaction = datastore.transaction();
   try {
     await transaction.run();
 
-    const [oldEntities] = await transaction.get([purchaseKey, paddleKey]);
-    const [oldPurchaseEntity, oldPaddleEntity] = oldEntities;
-    if (!oldPurchaseEntity || !oldPaddleEntity) {
-      // not found just return.
-      console.log(`(${logKey}) In updatePartialPurchase, not found entities`);
-      await transaction.commit();
-      return null;
-    }
+    const [oldEntities] = await transaction.get([purchaseKey, extraKey, paddleKey]);
+    const [oldPurchaseEntity, oldExtraEntity, oldPaddleEntity] = oldEntities;
 
-    const oldPurchase = derivePurchaseData(oldPurchaseEntity, null, oldPaddleEntity);
-    const purchase = { ...oldPurchase, ...purchaseData };
+    let purchase;
+    if (oldPurchaseEntity) {
+      const oldPurchase = derivePurchaseData(oldPurchaseEntity, null, oldPaddleEntity);
+      purchase = { ...oldPurchase, ...purchaseData };
+    } else {
+      purchase = { ...defaultPurchase, ...purchaseData };
+    }
 
     const purchaseEntity = {
       key: purchaseKey,
       data: derivePurchaseEntityData(
         purchase.source, purchase.productId, purchase.orderId, purchase.token,
         purchase.originalOrderId, purchase.status, purchase.expiryDate, purchase.endDate,
-        new Date()
+        date
       ),
     };
     const paddleEntity = {
@@ -230,7 +232,11 @@ const updatePartialPurchase = async (logKey, source, parsedData) => {
       ),
     };
 
-    transaction.save([purchaseEntity, paddleEntity]);
+    const entities = [purchaseEntity, paddleEntity];
+    if (!oldExtraEntity) entities.push(extraEntity);
+    if (purchaseUserEntity) entities.push(purchaseUserEntity);
+
+    transaction.save(entities);
     await transaction.commit();
 
     return derivePurchaseDataFromRaw(purchaseEntity, null, paddleEntity);
@@ -244,7 +250,7 @@ const invalidatePurchase = async (
   logKey, source, productId, token, linkedToken, parsedData
 ) => {
   if (source !== PLAYSTORE) {
-    throw new Error(`(${logKey}) Only support PLAYSTORE for now`);
+    throw new Error(`(${logKey}) Only support PLAYSTORE`);
   }
   if (!productId) throw new Error(`(${logKey}) Invalid productId: ${productId}`);
 
@@ -701,25 +707,47 @@ const parseData = (logKey, source, data) => {
     parsedData.status = parseStatus(logKey, source, data);
     parsedData.expiryDate = expiryDate;
     parsedData.endDate = expiryDate;
-  } else if (source === PADDLE) {
-    const expiryDate = new Date(data.payment.payoutDT);
-
-    parsedData.productId = data.productId;
-    parsedData.orderId = data.order_id + '';
-    parsedData.originalOrderId = data.subscription.subscription_id + '';
-    parsedData.status = parseStatus(logKey, source, data);
-    parsedData.expiryDate = expiryDate;
-    parsedData.endDate = expiryDate;
-    parsedData.paddleUserId = data.user.user_id + '';
-    parsedData.passthrough = data.passthrough;
-    parsedData.receiptUrl = data.receipt_url;
-    parsedData.updateUrl = null;
-    parsedData.cancelUrl = null;
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
   _validateStatus(logKey, parsedData.endDate, parsedData.status);
 
   return parsedData;
+};
+
+const _getPaddleExpiryDate = (data) => {
+  const expiryDate = new Date(data.payment.payoutDT);
+  if (data.subscription.status !== 'deleted') return expiryDate;
+
+  if (data.payment.amount === 0) {
+    let trialDays = 14;
+    if (isObject(data.subscriptionPlan)) {
+      const _trialDays = parseInt(data.subscriptionPlan.trial_days, 10);
+      if (isNumber(_trialDays)) trialDays = _trialDays;
+    }
+
+    return new Date(data.payment.payoutDT + trialDays * 24 * 60 * 60 * 1000);
+  }
+
+  if (isObject(data.subscriptionPlan) && isString(data.subscriptionPlan.billing_type)) {
+    const type = data.subscriptionPlan.billing_type;
+    const period = parseInt(data.subscriptionPlan.billing_period, 10);
+
+    if (isNumber(period)) {
+      if (type === 'day') {
+        expiryDate.setDate(expiryDate.getDate() + period);
+        return expiryDate;
+      } else if (type === 'month') {
+        expiryDate.setMonth(expiryDate.getMonth() + period);
+        return expiryDate;
+      } else if (type === 'year') {
+        expiryDate.setFullYear(expiryDate.getFullYear() + period);
+        return expiryDate;
+      }
+    }
+  }
+
+  expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+  return expiryDate;
 };
 
 const parsePartialData = (logKey, source, data) => {
@@ -729,12 +757,17 @@ const parsePartialData = (logKey, source, data) => {
     const originalOrderId = data.subscription.subscription_id + '';
     purchaseId = getPurchaseId(logKey, PADDLE, null, originalOrderId);
 
-    const expiryDate = new Date(data.payment.payoutDT);
+    const expiryDate = _getPaddleExpiryDate(data);
 
     purchaseData.productId = data.productId;
     purchaseData.orderId = data.order_id + '';
+    purchaseData.token = data.checkout_id;
     purchaseData.originalOrderId = originalOrderId;
+
     purchaseData.status = parseStatus(logKey, source, data);
+    if (purchaseData.status === EXPIRED && expiryDate.getTime() > Date.now()) {
+      purchaseData.status = NO_RENEW;
+    }
     purchaseData.expiryDate = expiryDate;
     purchaseData.endDate = expiryDate;
 
@@ -804,7 +837,6 @@ const parseStatus = (logKey, source, data) => {
     return UNKNOWN;
   } else if (source === PADDLE) {
     if (['active', 'trialing'].includes(data.subscription.status)) {
-      if (data.payment.payoutDT < now) return NO_RENEW;
       return ACTIVE;
     } else if (data.subscription.status === 'past_due') {
       return GRACE;

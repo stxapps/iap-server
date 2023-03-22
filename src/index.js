@@ -9,7 +9,7 @@ import paddle from './paddle';
 import dataApi from './data';
 import {
   ALLOWED_ORIGINS, SOURCES, APPSTORE, PLAYSTORE, PADDLE, MANUAL, PRODUCT_IDS, APP_IDS,
-  VALID, INVALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
+  VALID, UNKNOWN, ERROR, SIGNED_TEST_STRING,
 } from './const';
 import {
   runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
@@ -141,8 +141,8 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       return;
     }
 
-    const parsedData = dataApi.parseData(logKey, source, verifyData);
-    purchase = await dataApi.addPurchase(
+    const parsedData = dataApi.parsePartialData(logKey, source, verifyData);
+    purchase = await dataApi.updatePartialPurchase(
       logKey, source, userId, productId, token, parsedData,
     );
     console.log(`(${logKey}) Saved to Datastore`);
@@ -295,10 +295,26 @@ app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) 
 
   const parsedData = await paddle.parseNotification(logKey, reqBody);
 
-  const updatedPurchase = await dataApi.updatePartialPurchase(
-    logKey, PADDLE, parsedData
+  // Try to reduce multiple transactions attempt to access the same data,
+  //   causing Firestore to abort.
+  if (reqBody.alert_name === 'subscription_created') {
+    console.log(`(${logKey}) Found subscription_created, just end`);
+    res.status(200).end();
+    return;
+  }
+  if (
+    reqBody.alert_name === 'subscription_payment_succeeded' &&
+    parseInt(reqBody.initial_payment, 10) === 1
+  ) {
+    console.log(`(${logKey}) First subscription_payment_succeeded, just end`);
+    res.status(200).end();
+    return;
+  }
+
+  await dataApi.updatePartialPurchase(
+    logKey, PADDLE, null, null, null, parsedData
   );
-  if (updatedPurchase) console.log(`(${logKey}) Saved to Datastore`);
+  console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /paddle/notify finished`);
   res.status(200).end();
@@ -479,12 +495,9 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       }
 
       const parsedData = dataApi.parsePartialData(logKey, source, verifyData);
-      updatedPurchase = await dataApi.updatePartialPurchase(logKey, PADDLE, parsedData);
-      if (!updatedPurchase) {
-        statuses.push(INVALID);
-        updatedPurchases.push(null);
-        continue;
-      }
+      updatedPurchase = await dataApi.updatePartialPurchase(
+        logKey, PADDLE, null, null, null, parsedData
+      );
       console.log(`(${logKey}) Saved to Datastore`);
     } else if (source === MANUAL) {
       updatedPurchase = purchase;

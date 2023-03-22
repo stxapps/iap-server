@@ -39,6 +39,10 @@ export const isString = (val) => {
   return typeof val === 'string' || val instanceof String;
 };
 
+export const isNumber = (val) => {
+  return typeof val === 'number' && isFinite(val);
+};
+
 export const getAppId = (productId) => {
   if (productId === COM_BRACEDOTTO_SUPPORTER) return COM_BRACEDOTTO;
   if (productId === COM_JUSTNOTECC_SUPPORTER) return COM_JUSTNOTECC;
