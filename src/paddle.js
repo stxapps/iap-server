@@ -7,7 +7,7 @@ import {
   PADDLE, VALID, INVALID, UNKNOWN, NO_RENEW, EXPIRED, COM_BRACEDOTTO_SUPPORTER,
   COM_JUSTNOTECC_SUPPORTER,
 } from './const';
-import { isObject } from './utils';
+import { isObject, isString } from './utils';
 import paddleKeys from './paddle-keys.json' assert { type: 'json' };
 
 const subscriptionPlans = [];
@@ -299,7 +299,14 @@ const parseNotification = async (logKey, reqBody) => {
   }
 
   if ('user_id' in reqBody) purchaseData.paddleUserId = reqBody.user_id + '';
-  if ('passthrough' in reqBody) purchaseData.passthrough = reqBody.passthrough;
+  if ('passthrough' in reqBody) {
+    try {
+      const jsonObj = JSON.parse(reqBody.passthrough);
+      if (isString(jsonObj.randomId)) purchaseData.randomId = jsonObj.randomId;
+    } catch (error) {
+      console.log(`JSON.parse on reqBody.passthrough error: ${error}`);
+    }
+  }
   if ('receipt_url' in reqBody) purchaseData.receiptUrl = reqBody.receipt_url;
   if ('update_url' in reqBody) purchaseData.updateUrl = reqBody.update_url;
   if ('cancel_url' in reqBody) purchaseData.cancelUrl = reqBody.cancel_url;

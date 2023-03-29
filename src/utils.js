@@ -26,6 +26,10 @@ export const randomString = (length) => {
   return result;
 };
 
+export const sample = (arr) => {
+  return arr[Math.floor(Math.random() * arr.length)];
+};
+
 export const removeTailingSlash = (url) => {
   if (url.slice(-1) === '/') return url.slice(0, -1);
   return url;

@@ -294,23 +294,6 @@ app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) 
   }
 
   const parsedData = await paddle.parseNotification(logKey, reqBody);
-
-  // Try to reduce multiple transactions attempt to access the same data,
-  //   causing Firestore to abort.
-  if (reqBody.alert_name === 'subscription_created') {
-    console.log(`(${logKey}) Found subscription_created, just end`);
-    res.status(200).end();
-    return;
-  }
-  if (
-    reqBody.alert_name === 'subscription_payment_succeeded' &&
-    parseInt(reqBody.initial_payment, 10) === 1
-  ) {
-    console.log(`(${logKey}) First subscription_payment_succeeded, just end`);
-    res.status(200).end();
-    return;
-  }
-
   await dataApi.updatePartialPurchase(
     logKey, PADDLE, null, null, null, parsedData
   );
@@ -391,7 +374,8 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const { userId, signature, appId, doForce } = reqBody;
+  // source and randomId are optional i.e. only from web.
+  const { source, userId, signature, appId, doForce, randomId } = reqBody;
   if (!isString(userId)) {
     console.log(`(${logKey}) Invalid userId, return ERROR`);
     results.status = ERROR;
@@ -420,6 +404,19 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   }
 
   let purchases = await dataApi.getPurchases(logKey, userId);
+  if (source === PADDLE && isString(randomId)) {
+    let found = purchases.some(purchase => purchase.randomId === randomId);
+    if (!found) {
+      const purchasePaddles = await dataApi.getPurchasePaddles(logKey, randomId);
+      if (purchasePaddles.length > 0) {
+        for (const purchasePaddle of purchasePaddles) {
+          await dataApi.addPurchaseUser(logKey, purchasePaddle, userId);
+        }
+
+        purchases = await dataApi.getPurchases(logKey, userId);
+      }
+    }
+  }
   purchases = dataApi.filterPurchases(logKey, purchases, appId);
 
   results.purchases = purchases;
