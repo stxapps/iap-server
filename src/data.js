@@ -323,10 +323,8 @@ const invalidatePurchase = async (
   }
 };
 
-const addPurchaseUser = async (logKey, purchasePaddle, userId) => {
+const addPurchaseUser = async (logKey, purchaseId, userId) => {
   const date = new Date();
-
-  const purchaseId = purchasePaddle[datastore.KEY].name;
 
   const purchaseUserId = `${purchaseId}_${userId}`;
   const purchaseUserKey = datastore.key([PURCHASE_USER, purchaseUserId]);
@@ -712,6 +710,7 @@ const formPurchaseData = (purchaseEntities, extraEntities, paddleEntities) => {
 
 const derivePurchasePaddleData = (paddleEntity) => {
   return {
+    purchaseId: paddleEntity[datastore.KEY].name,
     paddleUserId: paddleEntity.paddleUserId,
     randomId: paddleEntity.randomId,
     receiptUrl: paddleEntity.receiptUrl,

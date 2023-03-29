@@ -410,7 +410,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
       const purchasePaddles = await dataApi.getPurchasePaddles(logKey, randomId);
       if (purchasePaddles.length > 0) {
         for (const purchasePaddle of purchasePaddles) {
-          await dataApi.addPurchaseUser(logKey, purchasePaddle, userId);
+          await dataApi.addPurchaseUser(logKey, purchasePaddle.purchaseId, userId);
         }
 
         purchases = await dataApi.getPurchases(logKey, userId);
