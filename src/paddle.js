@@ -10,7 +10,7 @@ import {
 import { isObject, isString } from './utils';
 import paddleKeys from './paddle-keys.json' assert { type: 'json' };
 
-const subscriptionPlans = [];
+const prodSubscriptionPlans = [], sandboxSubscriptionPlans = [];
 
 const getVendor = (doSandbox) => {
   return doSandbox ? 11185 : 163987;
@@ -173,6 +173,7 @@ const verifySubscription = async (logKey, userId, productId, token, paddleUserId
     return { status: UNKNOWN, verifyData: null };
   }
 
+  const subscriptionPlans = doSandbox ? sandboxSubscriptionPlans : prodSubscriptionPlans;
   if (subscriptionPlans.length === 0) {
     try {
       const res = await axios.post(getSubscriptionPlansUrl(doSandbox), {
