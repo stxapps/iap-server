@@ -37,6 +37,10 @@ const IGNORED_USER_IDS = [
   '030443a8210bca008abb49461006aa2ffda8568a3d5204585055f7bb33eb4ec8f3',
 ];
 
+const IGNORED_PADDLE_USER_IDS = [
+  '69489070', '69490728', '69488637', '450547', '450564', '445219',
+];
+
 const _getPurchases = async (purchaseFpath, doSync) => {
   let purchases = {}, lastUpdateDate = new Date(0);
   if (fs.existsSync(purchaseFpath)) {
@@ -121,7 +125,7 @@ export const getPurchases = async (purchaseFpath, purchaseUserFpath, doSync = tr
 
 export const doIgnorePurchase = (purchase) => {
   const {
-    source, token, originalOrderId, status, endDate, createDate, userIds,
+    source, token, originalOrderId, status, endDate, createDate, userIds, paddleUserId,
   } = purchase;
 
   if (![APPSTORE, PLAYSTORE, PADDLE].includes(source)) return true;
@@ -129,7 +133,8 @@ export const doIgnorePurchase = (purchase) => {
   const purchaseId = dataApi.getPurchaseId('', source, token, originalOrderId);
   if (IGNORED_PURCHASE_IDS.includes(purchaseId)) return true;
 
-  if (userIds.every(userId => IGNORED_USER_IDS.includes(userId))) return true;
+  if (userIds && userIds.every(userId => IGNORED_USER_IDS.includes(userId))) return true;
+  if (paddleUserId && IGNORED_PADDLE_USER_IDS.includes(paddleUserId)) return true;
 
   const dateDiff = endDate.getTime() - createDate.getTime();
   if (status === EXPIRED && dateDiff <= 2 * 24 * 60 * 60 * 1000) return true;
