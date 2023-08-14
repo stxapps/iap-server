@@ -71,7 +71,12 @@ const report = async () => {
   for (const purchase of purchases) {
     if (doIgnorePurchase(purchase)) continue;
 
-    const { source, productId, status, endDate, createDate } = purchase;
+    const { source, productId, status, endDate, createDate, userIds } = purchase;
+
+    if (!Array.isArray(userIds) || userIds.length < 1) {
+      console.log('*** IMPORTANT ***');
+      console.log('Found no-user purchase:', purchase);
+    }
 
     const dateDiff = endDate.getTime() - createDate.getTime();
     const isTrying = dateDiff <= 28 * 24 * 60 * 60 * 1000;
