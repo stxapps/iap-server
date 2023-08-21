@@ -37,9 +37,7 @@ const IGNORED_USER_IDS = [
   '030443a8210bca008abb49461006aa2ffda8568a3d5204585055f7bb33eb4ec8f3',
 ];
 
-const IGNORED_PADDLE_USER_IDS = [
-  '69489070', '69490728', '69488637', '450547', '450564', '445219',
-];
+const IGNORED_PADDLE_USER_IDS = [];
 
 const _getPurchases = async (purchaseFpath, doSync) => {
   let purchases = {}, lastUpdateDate = new Date(0);

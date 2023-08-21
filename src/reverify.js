@@ -7,7 +7,7 @@ import { APPSTORE, PLAYSTORE, PADDLE, VALID, EXPIRED } from './const';
 import { randomString } from './utils';
 
 const _reverify = async (logKey, purchase) => {
-  const { source, productId, token, paddleUserId } = purchase;
+  const { source, productId, token, paddleUserId, originalOrderId } = purchase;
 
   if (source === APPSTORE) {
     if (!token) {
@@ -54,8 +54,13 @@ const _reverify = async (logKey, purchase) => {
     }
     console.log(`(${logKey}) Saved to Datastore`);
   } else if (source === PADDLE) {
+    // We want to reverify a specific purchase,
+    //   but paddle.verifySubscription needs to start with paddleUserId
+    //   and return the latest subscription
+    //   so we speicify the subscription id (originalOrderId) we want to reverify here.
+    const specificSubscriptionId = parseInt(originalOrderId, 10);
     const verifyResult = await paddle.verifySubscription(
-      logKey, null, productId, token, paddleUserId,
+      logKey, null, productId, token, paddleUserId, [specificSubscriptionId],
     );
 
     const { status, verifyData } = verifyResult;

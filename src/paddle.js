@@ -82,7 +82,9 @@ const getSubscription = (subscriptions, payments) => {
   return subs.length === 0 ? null : subs[0];
 };
 
-const verifySubscription = async (logKey, userId, productId, token, paddleUserId) => {
+const verifySubscription = async (
+  logKey, userId, productId, token, paddleUserId, specificSubscriptionIds = null
+) => {
   let doSandbox, tResult;
   try {
     // Bug Alert! Only 15 transactions max!
@@ -141,6 +143,16 @@ const verifySubscription = async (logKey, userId, productId, token, paddleUserId
   if (!doMatch) {
     console.log(`(${logKey}) No subscription matches with checkout_id: ${token}, return INVALID`);
     return { status: INVALID, verifyData: null };
+  }
+
+  if (Array.isArray(specificSubscriptionIds)) {
+    subscriptions = subscriptions.filter(sub => {
+      return specificSubscriptionIds.includes(sub.subscription.subscription_id)
+    });
+    if (subscriptions.length === 0) {
+      console.log(`(${logKey}) No subscription left for specific ids, return INVALID`);
+      return { status: INVALID, verifyData: null };
+    }
   }
 
   const subIds = [];
