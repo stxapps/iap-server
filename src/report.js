@@ -4,9 +4,7 @@ import {
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
 
-const printAppReport = (
-  appName, productId, sums, nACommitted, nPCommitted, nDCommitted
-) => {
+const printAppReport = (appName, productId, sums) => {
   console.log('');
   console.log(appName);
   console.log(
@@ -20,7 +18,7 @@ const printAppReport = (
   );
   console.log(
     'Apple'.padEnd(8, ' '),
-    '|', `${nACommitted}`.padStart(10, ' '),
+    '|', `${sums[productId][APPSTORE].committed}`.padStart(10, ' '),
     '|', `${sums[productId][APPSTORE].tried}`.padStart(8, ' '),
     '|', `${sums[productId][APPSTORE].trying}`.padStart(8, ' '),
     '|', `${sums[productId][APPSTORE].active}`.padStart(8, ' '),
@@ -29,7 +27,7 @@ const printAppReport = (
   );
   console.log(
     'Google'.padEnd(8, ' '),
-    '|', `${nPCommitted}`.padStart(10, ' '),
+    '|', `${sums[productId][PLAYSTORE].committed}`.padStart(10, ' '),
     '|', `${sums[productId][PLAYSTORE].tried}`.padStart(8, ' '),
     '|', `${sums[productId][PLAYSTORE].trying}`.padStart(8, ' '),
     '|', `${sums[productId][PLAYSTORE].active}`.padStart(8, ' '),
@@ -38,7 +36,7 @@ const printAppReport = (
   );
   console.log(
     'Paddle'.padEnd(8, ' '),
-    '|', `${nDCommitted}`.padStart(10, ' '),
+    '|', `${sums[productId][PADDLE].committed}`.padStart(10, ' '),
     '|', `${sums[productId][PADDLE].tried}`.padStart(8, ' '),
     '|', `${sums[productId][PADDLE].trying}`.padStart(8, ' '),
     '|', `${sums[productId][PADDLE].active}`.padStart(8, ' '),
@@ -55,16 +53,19 @@ const report = async () => {
   const purchases = await getPurchases(purchaseFpath, purchaseUserFpath, true);
 
   const date = new Date();
+  const initSumAttrs = {
+    trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0, committed: 0,
+  };
   const sums = {
     [COM_BRACEDOTTO_SUPPORTER]: {
-      [APPSTORE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
-      [PLAYSTORE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
-      [PADDLE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
+      [APPSTORE]: { ...initSumAttrs },
+      [PLAYSTORE]: { ...initSumAttrs },
+      [PADDLE]: { ...initSumAttrs },
     },
     [COM_JUSTNOTECC_SUPPORTER]: {
-      [APPSTORE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
-      [PLAYSTORE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
-      [PADDLE]: { trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0 },
+      [APPSTORE]: { ...initSumAttrs },
+      [PLAYSTORE]: { ...initSumAttrs },
+      [PADDLE]: { ...initSumAttrs },
     }
   };
 
@@ -78,8 +79,10 @@ const report = async () => {
       console.log('Found no-user purchase:', purchase);
     }
 
-    const dateDiff = endDate.getTime() - createDate.getTime();
-    const isTrying = dateDiff <= 28 * 24 * 60 * 60 * 1000;
+    const dateDiff = (endDate.getTime() - createDate.getTime()) / (24 * 60 * 60 * 1000);
+    const isTrying = dateDiff <= 28;
+
+    sums[productId][source].committed += (Math.floor((dateDiff - 28) / 365) + 1);
 
     if (status === EXPIRED) {
       if (isTrying) sums[productId][source].tried += 1;
@@ -119,44 +122,27 @@ const report = async () => {
     console.log('Invalid purchase:', purchase);
   }
 
-  const nBACommitted = (
-    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].active +
-    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].activeNoRenew
-  );
-  const nBPCommitted = (
-    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].active +
-    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].activeNoRenew
-  );
-  const nBDCommitted = (
-    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].active +
-    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].activeNoRenew
-  );
-  const nJACommitted = (
-    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].activeNoRenew
-  );
-  const nJPCommitted = (
-    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].activeNoRenew
-  );
-  const nJDCommitted = (
-    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].activeNoRenew
-  );
-
   const nCommitted = (
-    nBACommitted + nBPCommitted + nBDCommitted + nJACommitted + nJPCommitted +
-    nJDCommitted
+    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].committed +
+    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].committed +
+    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].committed +
+    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].committed +
+    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].committed +
+    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].committed
+  );
+  const nActive = (
+    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].active +
+    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].active +
+    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].active +
+    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].active +
+    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].active +
+    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].active
   );
 
-  printAppReport(
-    'Brace.to', COM_BRACEDOTTO_SUPPORTER, sums, nBACommitted, nBPCommitted, nBDCommitted
-  );
-  printAppReport(
-    'Justnote', COM_JUSTNOTECC_SUPPORTER, sums, nJACommitted, nJPCommitted, nJDCommitted
-  );
+  printAppReport('Brace.to', COM_BRACEDOTTO_SUPPORTER, sums);
+  printAppReport('Justnote', COM_JUSTNOTECC_SUPPORTER, sums);
 
-  console.log('Total committed:', nCommitted);
+  console.log('Total committed:', nCommitted, 'Total active:', nActive);
   console.log('');
 };
 
