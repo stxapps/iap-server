@@ -4,7 +4,13 @@ import {
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
 
-const printAppReport = (appName, productId, sums) => {
+const printAppReport = (appName, productId, sums, appTotal) => {
+  for (const storeName of [APPSTORE, PLAYSTORE, PADDLE]) {
+    for (const sumAttr in appTotal) {
+      appTotal[sumAttr] += sums[productId][storeName][sumAttr];
+    }
+  }
+
   console.log('');
   console.log(appName);
   console.log(
@@ -43,7 +49,51 @@ const printAppReport = (appName, productId, sums) => {
     '|', `${sums[productId][PADDLE].activeNoRenew}`.padStart(8, ' '),
     '|', `${sums[productId][PADDLE].others}`.padStart(8, ' '),
   );
+  console.log(
+    ' '.padEnd(8, ' '),
+    ' ', `${appTotal.committed}`.padStart(10, ' '),
+    '|', `${appTotal.tried}`.padStart(8, ' '),
+    '|', `${appTotal.trying}`.padStart(8, ' '),
+    '|', `${appTotal.active}`.padStart(8, ' '),
+    '|', `${appTotal.activeNoRenew}`.padStart(8, ' '),
+    '|', `${appTotal.others}`.padStart(8, ' '),
+  );
   console.log('');
+};
+
+const printTotal = (sums, total) => {
+  for (const productId of [COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER]) {
+    for (const storeName of [APPSTORE, PLAYSTORE, PADDLE]) {
+      for (const sumAttr in total) {
+        total[sumAttr] += sums[productId][storeName][sumAttr];
+      }
+    }
+  }
+
+  console.log('');
+  console.log(
+    'Total'.padEnd(8, ' '),
+    '|', `${total.committed}`.padStart(10, ' '),
+    '|', `${total.tried}`.padStart(8, ' '),
+    '|', `${total.trying}`.padStart(8, ' '),
+    '|', `${total.active}`.padStart(8, ' '),
+    '|', `${total.activeNoRenew}`.padStart(8, ' '),
+    '|', `${total.others}`.padStart(8, ' '),
+  );
+  console.log('');
+};
+
+const calCommitted = (status, dateDiff) => {
+  const tryingDays = status === ACTIVE ? 17 : 28;
+
+  let committed = 0, dateLeft = dateDiff - tryingDays;
+  while (dateLeft > 0) {
+    committed += 1;
+    dateLeft -= 365;
+    if (status !== ACTIVE) dateLeft -= tryingDays;
+  }
+
+  return committed;
 };
 
 const report = async () => {
@@ -80,9 +130,10 @@ const report = async () => {
     }
 
     const dateDiff = (endDate.getTime() - createDate.getTime()) / (24 * 60 * 60 * 1000);
-    const isTrying = dateDiff <= 28;
+    const committed = calCommitted(status, dateDiff);
+    const isTrying = committed === 0;
 
-    sums[productId][source].committed += (Math.floor((dateDiff - 28) / 365) + 1);
+    sums[productId][source].committed += committed;
 
     if (status === EXPIRED) {
       if (isTrying) sums[productId][source].tried += 1;
@@ -122,28 +173,9 @@ const report = async () => {
     console.log('Invalid purchase:', purchase);
   }
 
-  const nCommitted = (
-    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].committed +
-    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].committed +
-    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].committed +
-    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].committed +
-    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].committed +
-    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].committed
-  );
-  const nActive = (
-    sums[COM_BRACEDOTTO_SUPPORTER][APPSTORE].active +
-    sums[COM_BRACEDOTTO_SUPPORTER][PLAYSTORE].active +
-    sums[COM_BRACEDOTTO_SUPPORTER][PADDLE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][APPSTORE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][PLAYSTORE].active +
-    sums[COM_JUSTNOTECC_SUPPORTER][PADDLE].active
-  );
-
-  printAppReport('Brace.to', COM_BRACEDOTTO_SUPPORTER, sums);
-  printAppReport('Justnote', COM_JUSTNOTECC_SUPPORTER, sums);
-
-  console.log('Total committed:', nCommitted, 'Total active:', nActive);
-  console.log('');
+  printAppReport('Brace.to', COM_BRACEDOTTO_SUPPORTER, sums, { ...initSumAttrs });
+  printAppReport('Justnote', COM_JUSTNOTECC_SUPPORTER, sums, { ...initSumAttrs });
+  printTotal(sums, { ...initSumAttrs });
 };
 
 report();
