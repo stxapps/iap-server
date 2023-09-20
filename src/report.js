@@ -84,15 +84,14 @@ const printTotal = (sums, total) => {
 };
 
 const calCommitted = (status, dateDiff) => {
-  const tryingDays = status === ACTIVE ? 17 : 28;
-
-  let committed = 0, dateLeft = dateDiff - tryingDays;
-  while (dateLeft > 0) {
-    committed += 1;
+  let committed = 0, dateLeft = dateDiff - 14;
+  while (true) {
     dateLeft -= 365;
-    if (status !== ACTIVE) dateLeft -= tryingDays;
+    if (dateLeft < -28) break; // possible no trail period.
+    committed += 1;
   }
-
+  //Check if calculate correctly.
+  //console.log(`dateDiff: ${Math.round(dateDiff)}, committed: ${committed}`);
   return committed;
 };
 
