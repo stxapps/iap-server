@@ -148,7 +148,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
     console.log(`(${logKey}) Saved to Datastore`);
   } else throw new Error(`(${logKey}) Invalid source: ${source}`);
 
-  results.purchase = purchase;
+  results.purchase = dataApi.getNormalizedPurchase(purchase);
 
   console.log(`(${logKey}) /verify finished`);
   res.send(JSON.stringify(results));
@@ -419,9 +419,9 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   }
   purchases = dataApi.filterPurchases(logKey, purchases, appId);
 
-  results.purchases = purchases;
-
   if (!doForce || purchases.length === 0) {
+    results.purchases = dataApi.getNormalizedPurchases(purchases);
+
     console.log(`(${logKey}) /status finished`);
     res.send(JSON.stringify(results));
     return;
@@ -505,10 +505,10 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   }
 
   if (statuses.some(el => el === VALID)) {
-    results.purchases = updatedPurchases.filter(el => el !== null);
+    const filteredPurchases = updatedPurchases.filter(el => el !== null);
+    results.purchases = dataApi.getNormalizedPurchases(filteredPurchases);
   } else if (statuses.some(el => el === UNKNOWN)) {
     results.status = UNKNOWN;
-    delete results.purchases;
   } else {
     results.purchases = [];
   }

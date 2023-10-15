@@ -926,24 +926,44 @@ const filterPurchases = (logKey, purchases, appId) => {
   //   Too old products (expire > 60 days), if verify, will get error
   const oldest = Date.now() - (45 * 24 * 60 * 60 * 1000);
 
-  let _purchases = purchases.filter(purchase => {
+  const filteredPurchases = purchases.filter(purchase => {
     return (
       getAppId(purchase.productId) === appId &&
       purchase.endDate.getTime() >= oldest
     );
   });
-  _purchases = _purchases.sort((a, b) => {
+
+  return filteredPurchases;
+};
+
+const getNormalizedPurchase = (purchase) => {
+  // Purchase token from Apple is large. Strip it to reduce its size.
+  const nPurchase = { ...purchase };
+  if (isString(nPurchase.token)) nPurchase.token = nPurchase.token.slice(0, 128);
+  return nPurchase;
+};
+
+const getNormalizedPurchases = (purchases) => {
+  if (!Array.isArray(purchases)) return null;
+
+  const _purchases = [...purchases].sort((a, b) => {
     return b.endDate.getTime() - a.endDate.getTime();
   });
 
-  const filteredPurchases = [], _productIds = [];
-  for (const purchase of _purchases) {
-    if (_productIds.includes(purchase.productId)) continue;
-    _productIds.push(purchase.productId);
-    filteredPurchases.push(purchase);
+  const nPurchases = [], _productIds = [], ANY = '_ANY_';
+  for (const status of [ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, ANY]) {
+    for (const purchase of _purchases) {
+      if (status !== ANY && purchase.status !== status) continue;
+
+      if (_productIds.includes(purchase.productId)) continue;
+      _productIds.push(purchase.productId);
+
+      const nPurchase = getNormalizedPurchase(purchase);
+      nPurchases.push(nPurchase);
+    }
   }
 
-  return filteredPurchases;
+  return nPurchases;
 };
 
 const data = {
@@ -951,6 +971,7 @@ const data = {
   updatePurchase, updatePartialPurchase, invalidatePurchase, addPurchaseUser,
   getPurchases, getPurchasePaddles, getUpdatedPurchases, getUpdatedPurchaseUsers,
   deleteAll, parseData, parsePartialData, parseStatus, getPurchaseId, filterPurchases,
+  getNormalizedPurchase, getNormalizedPurchases,
 };
 
 export default data;
