@@ -19,12 +19,8 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const cCorsOptions = {
-  'origin': ALLOWED_ORIGINS,
-};
-const sCorsOptions = {
-  'origin': '*',
-};
+const cCorsOptions = {};
+const sCorsOptions = {};
 
 app.get('/', (_req, res) => {
   res.send('Welcome to <a href="https://www.stxapps.com">STX Apps</a>\'s server!');
@@ -40,10 +36,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
-    console.log(`(${logKey}) Invalid referrer, return ERROR`);
-    results.status = ERROR;
-    res.send(JSON.stringify(results));
-    return;
+    console.log(`(${logKey}) Not expected referrer.`);
   }
 
   const reqBody = req.body;
@@ -313,10 +306,7 @@ app.post('/paddle/pre', cors(cCorsOptions), runAsyncWrapper(async (req, res) => 
   const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
-    console.log(`(${logKey}) Invalid referrer, return ERROR`);
-    results.status = ERROR;
-    res.send(JSON.stringify(results));
-    return;
+    console.log(`(${logKey}) Not expected referrer.`);
   }
 
   const reqBody = req.body;
@@ -359,10 +349,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
-    console.log(`(${logKey}) Invalid referrer, return ERROR`);
-    results.status = ERROR;
-    res.send(JSON.stringify(results));
-    return;
+    console.log(`(${logKey}) Not expected referrer.`);
   }
 
   const reqBody = req.body;
@@ -527,10 +514,7 @@ app.post('/delete-all', cors(cCorsOptions), runAsyncWrapper(async (req, res) => 
   const referrer = getReferrer(req);
   console.log(`(${logKey}) Referrer: ${referrer}`);
   if (!referrer || !ALLOWED_ORIGINS.includes(removeTailingSlash(referrer))) {
-    console.log(`(${logKey}) Invalid referrer, return ERROR`);
-    results.status = ERROR;
-    res.send(JSON.stringify(results));
-    return;
+    console.log(`(${logKey}) Not expected referrer.`);
   }
 
   const reqBody = req.body;
