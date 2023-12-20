@@ -16,8 +16,7 @@ const bindAuthClient = async () => {
     keyFile: 'src/playstore-service-account.json',
     scopes: ['https://www.googleapis.com/auth/androidpublisher'],
   });
-  const authClient = await auth.getClient();
-  google.options({ auth: authClient });
+  google.options({ auth });
 
   didBindAuthClient = true;
 };
