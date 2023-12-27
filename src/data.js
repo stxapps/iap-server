@@ -1,4 +1,4 @@
-import { Datastore } from '@google-cloud/datastore';
+import { Datastore, PropertyFilter } from '@google-cloud/datastore';
 
 import {
   VERIFY_LOG, NOTIFY_LOG, ACKNOWLEDGE_LOG, PADDLE_PRE, PADDLE, PURCHASE, PURCHASE_EXTRA,
@@ -297,7 +297,7 @@ const invalidatePurchase = async (
     }
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('purchaseId', '=', oldPurchaseId);
+    query.filter(new PropertyFilter('purchaseId', '=', oldPurchaseId));
     const [oldPurchaseUserEntities] = await transaction.runQuery(query);
 
     for (const entity of oldPurchaseUserEntities) {
@@ -351,7 +351,7 @@ const getPurchases = async (logKey, userId) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('userId', '=', userId);
+    query.filter(new PropertyFilter('userId', '=', userId));
     const [purchaseUserEntities] = await transaction.runQuery(query);
 
     const purchaseIds = [];
@@ -396,7 +396,7 @@ const getPurchasePaddles = async (logKey, randomId) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_PADDLE);
-    query.filter('randomId', '=', randomId);
+    query.filter(new PropertyFilter('randomId', '=', randomId));
     const [entities] = await transaction.runQuery(query);
 
     await transaction.commit();
@@ -414,7 +414,7 @@ const getUpdatedPurchases = async (updateDate) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE);
-    query.filter('updateDate', '>=', updateDate);
+    query.filter(new PropertyFilter('updateDate', '>=', updateDate));
     query.limit(800);
     const [purchaseEntities] = await transaction.runQuery(query);
 
@@ -454,7 +454,7 @@ const getUpdatedPurchaseUsers = async (updateDate) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('updateDate', '>=', updateDate);
+    query.filter(new PropertyFilter('updateDate', '>=', updateDate));
     query.limit(800);
     const [entities] = await transaction.runQuery(query);
 
@@ -473,7 +473,7 @@ const deleteVerifyLogs = async (logKey, userId, appId) => {
     await transaction.run();
 
     const query = datastore.createQuery(VERIFY_LOG);
-    query.filter('userId', '=', userId);
+    query.filter(new PropertyFilter('userId', '=', userId));
     const [verifyLogEntities] = await transaction.runQuery(query);
 
     const keys = [];
@@ -495,7 +495,7 @@ const deleteAcknowledgeLogs = async (logKey, userId, appId) => {
     await transaction.run();
 
     const query = datastore.createQuery(ACKNOWLEDGE_LOG);
-    query.filter('userId', '=', userId);
+    query.filter(new PropertyFilter('userId', '=', userId));
     const [ackLogEntities] = await transaction.runQuery(query);
 
     const keys = [];
@@ -517,7 +517,7 @@ const deletePurchaseUsers = async (logKey, userId, appId) => {
     await transaction.run();
 
     const query = datastore.createQuery(PURCHASE_USER);
-    query.filter('userId', '=', userId);
+    query.filter(new PropertyFilter('userId', '=', userId));
     const [purchaseUserEntities] = await transaction.runQuery(query);
 
     const purchaseIds = [];
