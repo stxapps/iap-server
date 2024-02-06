@@ -15,19 +15,22 @@ import {
   runAsyncWrapper, getReferrer, randomString, removeTailingSlash, isObject, isString,
 } from './utils';
 
+const corsConfig = cors({
+  origin: '*',
+  // Set the Access-Control-Max-Age header to 365 days.
+  maxAge: 60 * 60 * 24 * 365,
+});
+
 const app = express();
+app.use(corsConfig);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const cCorsOptions = {};
-const sCorsOptions = {};
 
 app.get('/', (_req, res) => {
   res.send('Welcome to <a href="https://www.stxapps.com">STX Apps</a>\'s server!');
 });
 
-app.options('/verify', cors(cCorsOptions));
-app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/verify', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /verify receives a post request`);
 
@@ -147,8 +150,7 @@ app.post('/verify', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   res.send(JSON.stringify(results));
 }));
 
-app.options('/appstore/notify', cors(sCorsOptions));
-app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/appstore/notify', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /appstore/notify receives a post request`);
 
@@ -186,8 +188,7 @@ app.post('/appstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res
   res.status(200).end();
 }));
 
-app.options('/playstore/notify', cors(sCorsOptions));
-app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/playstore/notify', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /playstore/notify receives a post request`);
 
@@ -266,8 +267,7 @@ app.post('/playstore/notify', cors(sCorsOptions), runAsyncWrapper(async (req, re
   res.status(200).end();
 }));
 
-app.options('/paddle/notify', cors(sCorsOptions));
-app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/paddle/notify', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /paddle/notify receives a post request`);
 
@@ -296,8 +296,7 @@ app.post('/paddle/notify', cors(sCorsOptions), runAsyncWrapper(async (req, res) 
   res.status(200).end();
 }));
 
-app.options('/paddle/pre', cors(cCorsOptions));
-app.post('/paddle/pre', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/paddle/pre', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /paddle/pre receives a post request`);
 
@@ -339,8 +338,7 @@ app.post('/paddle/pre', cors(cCorsOptions), runAsyncWrapper(async (req, res) => 
   res.status(200).end();
 }));
 
-app.options('/status', cors(cCorsOptions));
-app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/status', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /status receives a post request`);
 
@@ -504,8 +502,7 @@ app.post('/status', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
   res.send(JSON.stringify(results));
 }));
 
-app.options('/delete-all', cors(cCorsOptions));
-app.post('/delete-all', cors(cCorsOptions), runAsyncWrapper(async (req, res) => {
+app.post('/delete-all', runAsyncWrapper(async (req, res) => {
   const logKey = randomString(12);
   console.log(`(${logKey}) /delete-all receives a post request`);
 
