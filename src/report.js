@@ -1,8 +1,9 @@
-import { getPurchases, doIgnorePurchase } from './file';
+import { getPurchases, doIgnorePurchase, isObsoletePurchase } from './file';
 import {
   APPSTORE, PLAYSTORE, PADDLE, COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER,
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
 } from './const';
+import { isObject } from './utils';
 
 const printAppReport = (appName, productId, sums, appTotal) => {
   for (const storeName of [APPSTORE, PLAYSTORE, PADDLE]) {
@@ -101,7 +102,6 @@ const report = async () => {
 
   const purchases = await getPurchases(purchaseFpath, purchaseUserFpath, true);
 
-  const date = new Date();
   const initSumAttrs = {
     trying: 0, tried: 0, active: 0, activeNoRenew: 0, others: 0, committed: 0,
   };
@@ -123,9 +123,12 @@ const report = async () => {
 
     const { source, productId, status, endDate, createDate, userIds } = purchase;
 
-    if (!Array.isArray(userIds) || userIds.length < 1) {
-      console.log('*** IMPORTANT ***');
-      console.log('Found no-user purchase:', purchase);
+    if (!isObject(createDate)) {
+      console.log('Found no-createDate purchase:', purchase);
+      continue;
+    }
+    if (status !== EXPIRED && (!Array.isArray(userIds) || userIds.length !== 1)) {
+      console.log('Found wrong-user purchase:', purchase);
     }
 
     const dateDiff = (endDate.getTime() - createDate.getTime()) / (24 * 60 * 60 * 1000);
@@ -140,7 +143,7 @@ const report = async () => {
       continue;
     }
 
-    if (endDate.getTime() < date.getTime()) {
+    if (isObsoletePurchase(purchase)) {
       // If not expired and endDate is behind today, status is obsolete,
       //   should call reverify.
       console.log('Found obsolete status:', purchase);
