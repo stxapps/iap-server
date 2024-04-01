@@ -60,4 +60,13 @@ export const getAppstoreSecretKey = (productId) => {
   return null;
 };
 
+export const getAppstoreSecretInfo = () => {
+  const info = {
+    issuerId: appstoreKeys['iapIssuerId'],
+    keyId: appstoreKeys['iapKeyId'],
+    secretKey: appstoreKeys['iapPrivateKey'],
+  };
+  return info;
+};
+
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
