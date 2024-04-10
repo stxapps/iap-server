@@ -5,6 +5,7 @@ import { APPSTORE, PLAYSTORE, PADDLE, EXPIRED, GRACE, ON_HOLD } from './const';
 import { isObject } from './utils';
 import {
   IGNORED_PURCHASE_IDS, IGNORED_USER_IDS, IGNORED_PADDLE_USER_IDS,
+  IGNORED_WRONG_USRES_PURCHASE_IDS,
 } from './ignore';
 
 const _getPurchases = async (purchaseFpath, doSync) => {
@@ -106,6 +107,19 @@ export const doIgnorePurchase = (purchase) => {
     const dateDiff = endDate.getTime() - createDate.getTime();
     if (status === EXPIRED && dateDiff <= 2 * 24 * 60 * 60 * 1000) return true;
   }
+
+  return false;
+};
+
+export const isWrongUserPurchase = (purchase) => {
+  const { source, token, originalOrderId, status, userIds } = purchase;
+  const purchaseId = dataApi.getPurchaseId('', source, token, originalOrderId);
+
+  if (
+    status !== EXPIRED &&
+    !IGNORED_WRONG_USRES_PURCHASE_IDS.includes(purchaseId) &&
+    (!Array.isArray(userIds) || userIds.length !== 1)
+  ) return true;
 
   return false;
 };

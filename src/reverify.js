@@ -3,7 +3,7 @@ import playstore from './playstore';
 import paddle from './paddle';
 import dataApi from './data';
 import { getPurchases, doIgnorePurchase } from './file';
-import { APPSTORE, PLAYSTORE, PADDLE, VALID, EXPIRED } from './const';
+import { APPSTORE, PLAYSTORE, PADDLE, VALID, EXPIRED, UNKNOWN } from './const';
 import { randomString } from './utils';
 
 const _reverify = async (logKey, purchase) => {
@@ -94,7 +94,7 @@ const reverify = async () => {
 
     if (doIgnorePurchase(purchase) || status === EXPIRED) continue;
 
-    if (endDate.getTime() < date.getTime()) {
+    if (endDate.getTime() < date.getTime() || status === UNKNOWN) {
       console.log('Found obsolete status:', purchase);
       await _reverify(logKey, purchase);
     }

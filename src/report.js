@@ -1,4 +1,6 @@
-import { getPurchases, doIgnorePurchase, isObsoletePurchase } from './file';
+import {
+  getPurchases, doIgnorePurchase, isWrongUserPurchase, isObsoletePurchase,
+} from './file';
 import {
   APPSTORE, PLAYSTORE, PADDLE, COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER,
   ACTIVE, NO_RENEW, GRACE, ON_HOLD, PAUSED, EXPIRED, UNKNOWN,
@@ -121,13 +123,13 @@ const report = async () => {
   for (const purchase of purchases) {
     if (doIgnorePurchase(purchase)) continue;
 
-    const { source, productId, status, endDate, createDate, userIds } = purchase;
+    const { source, productId, status, endDate, createDate } = purchase;
 
     if (!isObject(createDate)) {
       console.log('Found no-createDate purchase:', purchase);
       continue;
     }
-    if (status !== EXPIRED && (!Array.isArray(userIds) || userIds.length !== 1)) {
+    if (isWrongUserPurchase(purchase)) {
       console.log('Found wrong-user purchase:', purchase);
     }
 
