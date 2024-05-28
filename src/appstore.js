@@ -5,18 +5,14 @@ import * as jose from 'jose';
 import { X509Certificate } from 'crypto';
 import dollabillApple from 'dollabill-apple';
 import { AppleVerifyReceiptErrorCode } from 'types-apple-iap';
-import jsonwebtoken from 'jsonwebtoken';
-import axios from 'axios';
 
 import dataApi from './data';
 import {
   APPLE_ROOT_CA_G3_FINGERPRINTS, APPSTORE, VALID, INVALID, UNKNOWN,
 } from './const';
-import {
-  getAppId, getAppstoreSecretKey, getAppstoreSecretInfo, isObject, isString,
-} from './utils';
+import { getAppstoreSecretKey, isObject } from './utils';
 
-const verifySubscriptionByToken = async (logKey, userId, productId, token) => {
+const verifySubscription = async (logKey, userId, productId, token) => {
   const verifyResult = await dollabillApple.verifyReceipt({
     receipt: token, sharedSecret: getAppstoreSecretKey(productId)
   });
@@ -65,112 +61,6 @@ const verifySubscriptionByToken = async (logKey, userId, productId, token) => {
 
   return { status: VALID, latestReceipt, verifyData };
 };
-
-const getSubscriptionStatusesUrl = (doSandbox, transactionId) => {
-  const suffix = doSandbox ? '-sandbox' : '';
-  const url = `https://api.storekit${suffix}.itunes.apple.com/inApps/v1/subscriptions/`;
-  return url + transactionId;
-};
-
-const createAppStoreBearerToken = (productId) => {
-  const payload = { bid: getAppId(productId) };
-  const { issuerId, keyId, secretKey } = getAppstoreSecretInfo();
-  const options = /** @type any */({
-    algorithm: 'ES256',
-    keyid: keyId,
-    issuer: issuerId,
-    audience: 'appstoreconnect-v1',
-    expiresIn: '5m',
-  });
-  return jsonwebtoken.sign(payload, secretKey, options);
-};
-
-const getSubscriptionStatuses = async (doSandbox, productId, transactionId) => {
-  const url = getSubscriptionStatusesUrl(doSandbox, transactionId);
-  const headers = {
-    'Authorization': 'Bearer ' + createAppStoreBearerToken(productId),
-    'Accept': 'application/json',
-  };
-  const res = await axios.get(url, { headers });
-  return res;
-};
-
-const verifySubscriptionByTId = async (logKey, userId, productId, transactionId) => {
-  let sResult;
-  try {
-    // github.com/apple/app-store-server-library-node/blob/main/index.ts
-    const res = await getSubscriptionStatuses(false, productId, transactionId);
-    sResult = res.data;
-
-    // TODO: How to know to try sandbox environment
-    if (res.status === 404) {
-      const res = await getSubscriptionStatuses(true, productId, transactionId);
-      if (isObject(res.data)) {
-        sResult = res.data;
-      }
-    }
-  } catch (error) {
-    if (!error.response || !error.response.status) {
-      console.log(`(${logKey}) appstore.verifySubscription getSubscriptionStatuses error, return UNKNOWN`);
-      return { status: UNKNOWN, latestReceipt: null, verifyData: null };
-    }
-
-    console.log(`(${logKey}) appstore.verifySubscription getSubscriptionStatuses error: ${error.response.status}, return UNKNOWN`);
-    return { status: UNKNOWN, latestReceipt: null, verifyData: null };
-  }
-
-  if (
-    !isObject(sResult) ||
-    sResult.bundleId !== getAppId(productId) ||
-    !Array.isArray(sResult.data)
-  ) {
-    console.log(`(${logKey}) appstore.verifySubscription getSubscriptionStatuses invalid tResult, return UNKNOWN`);
-    return { status: UNKNOWN, latestReceipt: null, verifyData: null };
-  }
-
-  for (const item of sResult.data) {
-    for (const transaction of item.lastTransactions) {
-      const { signedTransactionInfo, signedRenewalInfo } = transaction;
-
-      const transactionInfo = await verifySignedPayload(signedTransactionInfo);
-      const renewalInfo = await verifySignedPayload(signedRenewalInfo);
-      transaction.transactionInfo = transactionInfo;
-      transaction.renewalInfo = renewalInfo;
-      delete transaction.signedTransactionInfo;
-      delete transaction.signedRenewalInfo;
-    }
-  }
-
-  await dataApi.saveVerifyLog(logKey, APPSTORE, userId, productId, null, sResult);
-
-  // TODO: Choose the best one and parse to dollbill?
-  const payloads = [];
-  for (const item of sResult.data) {
-    for (const transaction of item.lastTransactions) {
-      const payload = derivePayloadV1(transaction);
-      payloads.push(payload);
-    }
-  }
-
-  const verifyData = payloads[0];
-  console.log(`(${logKey}) verifyData: ${JSON.stringify(verifyData)}`);
-
-  return { status: VALID, latestReceipt: null, verifyData };
-};
-
-const verifySubscription = async (logKey, userId, productId, token, transactionId) => {
-  let verifyResult;
-  if (isString(transactionId)) {
-    verifyResult = await verifySubscriptionByTId(
-      logKey, userId, productId, transactionId
-    );
-  } else {
-    verifyResult = await verifySubscriptionByToken(
-      logKey, userId, productId, token
-    );
-  }
-  return verifyResult;
-}
 
 /**
  * Verify a certificate chain provided in the x5c field of a decoded header of a JWS.

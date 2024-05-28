@@ -51,7 +51,7 @@ app.post('/verify', runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const { source, userId, productId, token, paddleUserId, transactionId } = reqBody;
+  const { source, userId, productId, token, paddleUserId } = reqBody;
   if (!SOURCES.includes(source)) {
     console.log(`(${logKey}) Invalid source, return ERROR`);
     results.status = ERROR;
@@ -70,10 +70,7 @@ app.post('/verify', runAsyncWrapper(async (req, res) => {
     res.send(JSON.stringify(results));
     return;
   }
-  if (
-    (source === APPSTORE && !isString(token) && !isString(transactionId)) ||
-    (source !== APPSTORE && !isString(token))
-  ) {
+  if (!isString(token)) {
     console.log(`(${logKey}) Invalid token, return ERROR`);
     results.status = ERROR;
     res.send(JSON.stringify(results));
@@ -83,7 +80,7 @@ app.post('/verify', runAsyncWrapper(async (req, res) => {
   let purchase;
   if (source === APPSTORE) {
     const verifyResult = await appstore.verifySubscription(
-      logKey, userId, productId, token, transactionId,
+      logKey, userId, productId, token,
     );
 
     const { status, latestReceipt, verifyData } = verifyResult;
@@ -417,17 +414,17 @@ app.post('/status', runAsyncWrapper(async (req, res) => {
 
   const statuses = [], updatedPurchases = [];
   for (const purchase of purchases) {
-    const { source, productId, token, paddleUserId, originalOrderId } = purchase;
+    const { source, productId, token, paddleUserId } = purchase;
 
     let updatedPurchase;
     if (source === APPSTORE) {
       // token can be null i.e. no verify but notification arrived.
       // should be happen only on App Store
       //   as in notification V2, there's no latestReceipt.
-      if (!isString(token) && !isString(originalOrderId)) continue;
+      if (!isString(token)) continue;
 
       const verifyResult = await appstore.verifySubscription(
-        logKey, userId, productId, token, originalOrderId,
+        logKey, userId, productId, token,
       );
 
       const { status, latestReceipt, verifyData } = verifyResult;
