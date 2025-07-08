@@ -335,7 +335,7 @@ app.post('/paddle/pre', runAsyncWrapper(async (req, res) => {
   console.log(`(${logKey}) Saved to Datastore`);
 
   console.log(`(${logKey}) /paddle/pre finished`);
-  res.status(200).end();
+  res.send(JSON.stringify(results));
 }));
 
 app.post('/status', runAsyncWrapper(async (req, res) => {

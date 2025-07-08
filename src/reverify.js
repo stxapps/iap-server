@@ -11,7 +11,7 @@ const _reverify = async (logKey, purchase) => {
 
   if (source === APPSTORE) {
     if (!token) {
-      console.log(`(${logKey}) Found no token for purchase: ${purchase}`);
+      console.log(`(${logKey}) Found no token for purchase:`, purchase);
       return;
     }
 
@@ -21,7 +21,7 @@ const _reverify = async (logKey, purchase) => {
 
     const { status, latestReceipt, verifyData } = verifyResult;
     if (status !== VALID) {
-      console.log(`(${logKey}) Found invalid status: ${status} for purchase: ${purchase}`);
+      console.log(`(${logKey}) Found invalid status: ${status} for purchase:`, purchase);
       return;
     }
 
@@ -37,7 +37,7 @@ const _reverify = async (logKey, purchase) => {
 
     const { status, verifyData } = verifyResult;
     if (status !== VALID) {
-      console.log(`(${logKey}) Found invalid status: ${status} for purchase: ${purchase}`);
+      console.log(`(${logKey}) Found invalid status: ${status} for purchase:`, purchase);
       return;
     }
 
@@ -65,7 +65,7 @@ const _reverify = async (logKey, purchase) => {
 
     const { status, verifyData } = verifyResult;
     if (status !== VALID) {
-      console.log(`(${logKey}) Found invalid status: ${status} for purchase: ${purchase}`);
+      console.log(`(${logKey}) Found invalid status: ${status} for purchase:`, purchase);
       return;
     }
 

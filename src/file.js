@@ -5,7 +5,7 @@ import { APPSTORE, PLAYSTORE, PADDLE, EXPIRED, GRACE, ON_HOLD } from './const';
 import { isObject } from './utils';
 import {
   IGNORED_PURCHASE_IDS, IGNORED_USER_IDS, IGNORED_PADDLE_USER_IDS,
-  IGNORED_WRONG_USRES_PURCHASE_IDS,
+  IGNORED_WRONG_USERS_PURCHASE_IDS,
 } from './ignore';
 
 const _getPurchases = async (purchaseFpath, doSync) => {
@@ -117,7 +117,7 @@ export const isWrongUserPurchase = (purchase) => {
 
   if (
     status !== EXPIRED &&
-    !IGNORED_WRONG_USRES_PURCHASE_IDS.includes(purchaseId) &&
+    !IGNORED_WRONG_USERS_PURCHASE_IDS.includes(purchaseId) &&
     (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 2)
   ) return true;
 
