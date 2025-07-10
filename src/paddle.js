@@ -8,7 +8,7 @@ import {
   COM_JUSTNOTECC_SUPPORTER,
 } from './const';
 import { isObject, isString } from './utils';
-import paddleKeys from './paddle-keys.json' assert { type: 'json' };
+import paddleKeys from './paddle-keys.json' with { type: 'json' };
 
 const prodSubscriptionPlans = [], sandboxSubscriptionPlans = [];
 
@@ -243,7 +243,7 @@ const validateWebhook = (reqBody, doSandbox) => {
   delete jsonObj.p_signature;
   jsonObj = ksort(jsonObj);
   for (const property in jsonObj) {
-    if (jsonObj.hasOwnProperty(property) && (typeof jsonObj[property]) !== "string") {
+    if (jsonObj.hasOwnProperty(property) && (typeof jsonObj[property]) !== 'string') {
       if (Array.isArray(jsonObj[property])) {
         jsonObj[property] = jsonObj[property].toString();
       } else {
