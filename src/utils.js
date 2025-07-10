@@ -1,7 +1,8 @@
 import {
   COM_BRACEDOTTO, COM_JUSTNOTECC, COM_BRACEDOTTO_SUPPORTER, COM_JUSTNOTECC_SUPPORTER,
+  COM_BRACEDOTTO_BRACE, COM_JUSTNOTECC_JUSTNOTE,
 } from './const';
-import appstoreKeys from './appstore-keys.json' assert { type: 'json' };
+import appstoreKeys from './appstore-keys.json' with { type: 'json' };
 
 export const runAsyncWrapper = (callback) => {
   return function (req, res, next) {
@@ -40,16 +41,26 @@ export const isObject = (val) => {
 };
 
 export const isString = (val) => {
-  return typeof val === 'string' || val instanceof String;
+  return typeof val === 'string';
 };
 
 export const isNumber = (val) => {
   return typeof val === 'number' && isFinite(val);
 };
 
+export const isFldStr = (val) => {
+  return isString(val) && val.length > 0;
+};
+
 export const getAppId = (productId) => {
   if (productId === COM_BRACEDOTTO_SUPPORTER) return COM_BRACEDOTTO;
   if (productId === COM_JUSTNOTECC_SUPPORTER) return COM_JUSTNOTECC;
+  return null;
+};
+
+export const getBundleId = (productId) => {
+  if (productId === COM_BRACEDOTTO_SUPPORTER) return COM_BRACEDOTTO_BRACE;
+  if (productId === COM_JUSTNOTECC_SUPPORTER) return COM_JUSTNOTECC_JUSTNOTE;
   return null;
 };
 
@@ -60,11 +71,11 @@ export const getAppstoreSecretKey = (productId) => {
   return null;
 };
 
-export const getAppstoreSecretInfo = () => {
+export const getAppstoreInfo = () => {
   const info = {
     issuerId: appstoreKeys['iapIssuerId'],
     keyId: appstoreKeys['iapKeyId'],
-    secretKey: appstoreKeys['iapPrivateKey'],
+    privateKey: appstoreKeys['iapPrivateKey'],
   };
   return info;
 };

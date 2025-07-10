@@ -2,7 +2,7 @@
 //   and https://github.com/levibostian/dollabill-apple
 // Verify JWS from App Store Server by github.com/agisboye/app-store-server-api
 import * as jose from 'jose';
-import { X509Certificate } from 'crypto';
+import { X509Certificate, randomUUID } from 'crypto';
 import dollabillApple from 'dollabill-apple';
 import { AppleVerifyReceiptErrorCode } from 'types-apple-iap';
 
@@ -10,9 +10,11 @@ import dataApi from './data';
 import {
   APPLE_ROOT_CA_G3_FINGERPRINTS, APPSTORE, VALID, INVALID, UNKNOWN,
 } from './const';
-import { getAppstoreSecretKey, isObject } from './utils';
+import {
+  getBundleId, getAppstoreSecretKey, getAppstoreInfo, isObject, isFldStr,
+} from './utils';
 
-const verifySubscription = async (logKey, userId, productId, token) => {
+const verifySubscriptionOld = async (logKey, userId, productId, token) => {
   const verifyResult = await dollabillApple.verifyReceipt({
     receipt: token, sharedSecret: getAppstoreSecretKey(productId)
   });
@@ -61,6 +63,153 @@ const verifySubscription = async (logKey, userId, productId, token) => {
 
   return { status: VALID, latestReceipt, verifyData };
 };
+
+const getAuthToken = async (issuerId, keyId, privateKey, bundleId) => {
+  const privateKeyObj = await jose.importPKCS8(privateKey, 'ES256');
+  const payload = { bid: bundleId, nonce: randomUUID() };
+  const expirySeconds = Math.floor((Date.now() / 1000) + 3599); // must within 1 hour
+
+  const token = await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'ES256', kid: keyId, typ: 'JWT' })
+    .setIssuer(issuerId)
+    .setIssuedAt()
+    .setExpirationTime(expirySeconds)
+    .setAudience('appstoreconnect-v1')
+    .sign(privateKeyObj);
+
+  return token;
+};
+
+const getSubsUrl = (doSandbox, id) => {
+  let base = 'https://api.storekit.itunes.apple.com';
+  if (doSandbox) base = 'https://api.storekit-sandbox.itunes.apple.com';
+  return `${base}/inApps/v1/subscriptions/${id}`;
+};
+
+const getSubs = async (productId, transactionId) => {
+  const { issuerId, keyId, privateKey } = getAppstoreInfo();
+  const bundleId = getBundleId(productId);
+  const authToken = await getAuthToken(issuerId, keyId, privateKey, bundleId);
+
+  let res = await fetch(getSubsUrl(false, transactionId), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  let data = await res.json();
+  if (res.ok) return data;
+
+  if (res.status === 404 && data.errorCode === 4040010) {
+    res = await fetch(getSubsUrl(true, transactionId), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    data = await res.json();
+    if (res.ok) return data;
+  }
+
+  let bodyText = `${data.errorCode}`;
+  if (isFldStr(data.errorMessage)) bodyText += ' ' + data.errorMessage;
+
+  let msg = `${res.status}`;
+  if (isFldStr(res.statusText)) msg += ' ' + res.statusText;
+  if (isFldStr(bodyText)) msg += ' ' + bodyText;
+  throw new Error(msg);
+};
+
+const verifySubscriptionNew = async (logKey, userId, productId, token) => {
+  let transactionId;
+  try {
+    const payload = await verifySignedPayload(token);
+    transactionId = payload.transactionId;
+  } catch (error) {
+    console.log(`(${logKey}) appstore.verifySubscription verifySignedPayload error, return INVALID`, error);
+    return { status: INVALID, latestReceipt: null, verifyData: null };
+  }
+  if (!isFldStr(transactionId)) {
+    console.log(`(${logKey}) appstore.verifySubscription no transactionId, return INVALID`);
+    return { status: INVALID, latestReceipt: null, verifyData: null };
+  }
+
+  let tResult;
+  try {
+    tResult = await getSubs(productId, transactionId);
+  } catch (error) {
+    console.log(`(${logKey}) appstore.verifySubscription getSubs error, return UNKNOWN`, error);
+    return { status: UNKNOWN, latestReceipt: null, verifyData: null };
+  }
+  if (!tResult) {
+    console.log(`(${logKey}) Should not reach here as no data should throw an error, return UNKNOWN`);
+    return { status: UNKNOWN, latestReceipt: null, verifyData: null };
+  }
+  if ('errorCode' in tResult) {
+    console.log(`(${logKey}) Should not reach here as error should be catched, return UNKNOWN`, tResult);
+    return { status: UNKNOWN, latestReceipt: null, verifyData: null };
+  }
+
+  await dataApi.saveVerifyLog(logKey, APPSTORE, userId, productId, token, tResult);
+
+  let verifyData;
+  try {
+    const lastTransaction = tResult.data[0].lastTransactions[0];
+    const transactionInfo = jose.decodeJwt(lastTransaction.signedTransactionInfo);
+    const renewalInfo = jose.decodeJwt(lastTransaction.signedRenewalInfo);
+
+    const payloadV2 = {
+      data: {
+        environment: transactionInfo.environment,
+        bundleId: transactionInfo.bundleId,
+        bundleVersion: '',
+        transactionInfo,
+        renewalInfo
+      },
+      notificationType: '',
+    };
+    const payloadV1 = /** @type any */(derivePayloadV1(payloadV2));
+    const pResult = dollabillApple.parseServerToServerNotification({
+      responseBody: payloadV1, sharedSecret: payloadV1.password,
+    })
+    if (dollabillApple.isFailure(pResult)) {
+      console.log(`(${logKey}) appstore.verifySubscription invalid pResult, return INVALID`, pResult);
+      return { status: INVALID, latestReceipt: null, verifyData: null };
+    }
+
+    const subscriptions = pResult.autoRenewableSubscriptions;
+    if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
+      console.log(`(${logKey}) appstore.verifySubscription no subscription, return INVALID`, pResult);
+      return { status: INVALID, latestReceipt: null, verifyData: null };
+    }
+    if (subscriptions.length !== 1) {
+      console.log(`(${logKey}) Found ${subscriptions.length} subscriptions, use only the first`);
+    }
+
+    verifyData = subscriptions[0];
+  } catch (error) {
+    console.log(`(${logKey}) appstore.verifySubscription parse error, return INVALID`, error);
+    return { status: INVALID, latestReceipt: null, verifyData: null };
+  }
+
+  return { status: VALID, latestReceipt: token, verifyData };
+}
+
+const isJWS = (token) => {
+  return token.split('.').length === 3;
+};
+
+const verifySubscription = async (logKey, userId, productId, token) => {
+  let res;
+  if (isJWS(token)) {
+    res = await verifySubscriptionNew(logKey, userId, productId, token);
+  } else {
+    res = await verifySubscriptionOld(logKey, userId, productId, token);
+  }
+  return res;
+}
 
 /**
  * Verify a certificate chain provided in the x5c field of a decoded header of a JWS.

@@ -35,6 +35,10 @@ export const COM_JUSTNOTECC = 'com.justnotecc';
 
 export const APP_IDS = [COM_BRACEDOTTO, COM_JUSTNOTECC];
 
+// iOS bundle id
+export const COM_BRACEDOTTO_BRACE = 'com.bracedotto.brace';
+export const COM_JUSTNOTECC_JUSTNOTE = 'com.justnotecc.justnote';
+
 // Product id
 export const COM_BRACEDOTTO_SUPPORTER = 'com.bracedotto.supporter';
 export const COM_JUSTNOTECC_SUPPORTER = 'com.justnotecc.supporter';
