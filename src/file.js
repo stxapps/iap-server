@@ -118,7 +118,7 @@ export const isWrongUserPurchase = (purchase) => {
   if (
     status !== EXPIRED &&
     !IGNORED_WRONG_USERS_PURCHASE_IDS.includes(purchaseId) &&
-    (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 2)
+    (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 3)
   ) return true;
 
   return false;
