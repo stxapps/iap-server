@@ -126,7 +126,7 @@ const report = async () => {
     const { source, productId, status, endDate, createDate } = purchase;
 
     if (!isObject(createDate)) {
-      console.log('Found no-createDate purchase:', purchase);
+      if (status !== EXPIRED) console.log('Found no-createDate purchase:', purchase);
       continue;
     }
     if (isWrongUserPurchase(purchase)) {

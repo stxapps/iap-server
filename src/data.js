@@ -415,7 +415,7 @@ const getUpdatedPurchases = async (updateDate) => {
 
     const query = datastore.createQuery(PURCHASE);
     query.filter(new PropertyFilter('updateDate', '>=', updateDate));
-    query.limit(800);
+    query.limit(1800);
     const [purchaseEntities] = await transaction.runQuery(query);
 
     const purchaseIds = [], paddleIds = [];
@@ -455,7 +455,7 @@ const getUpdatedPurchaseUsers = async (updateDate) => {
 
     const query = datastore.createQuery(PURCHASE_USER);
     query.filter(new PropertyFilter('updateDate', '>=', updateDate));
-    query.limit(800);
+    query.limit(1800);
     const [entities] = await transaction.runQuery(query);
 
     await transaction.commit();

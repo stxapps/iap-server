@@ -3,7 +3,7 @@
   "version": "0.7.0",
   "private": true,
   "engines": {
-    "node": "20.x.x"
+    "node": "24.x.x"
   },
   "type": "module",
   "scripts": {
@@ -11,22 +11,22 @@
     "start": "node --import=specifier-resolution-node/register src/index.js",
     "start-local": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json nodemon --import=specifier-resolution-node/register src/index.js",
     "deploy": "gcloud app deploy --no-promote --project=iap-001",
-    "report": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/report.js ~/Drive/tmp/purchases.json ~/Drive/tmp/purchase-users.json",
-    "reverify": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/reverify.js ~/Drive/tmp/purchases.json ~/Drive/tmp/purchase-users.json",
-    "play": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/play.js ~/Drive/tmp/purchases.json ~/Drive/tmp/purchase-users.json"
+    "report": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/report.js ~/tmp/purchases.json ~/tmp/purchase-users.json",
+    "reverify": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/reverify.js ~/tmp/purchases.json ~/tmp/purchase-users.json",
+    "play": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/play.js ~/tmp/purchases.json ~/tmp/purchase-users.json"
   },
   "dependencies": {
-    "@google-cloud/datastore": "^8.3.0",
+    "@google-cloud/datastore": "^8.7.0",
     "@stacks/encryption": "^6.13.0",
-    "axios": "^1.6.2",
-    "cors": "^2.8.5",
+    "axios": "^1.13.6",
+    "cors": "^2.8.6",
     "dollabill-apple": "1.0.0-beta.2",
-    "express": "^4.18.2",
+    "express": "^4.22.1",
     "googleapis": "^129.0.0",
-    "jose": "^5.1.3",
-    "jsonwebtoken": "^9.0.2",
+    "jose": "^5.10.0",
+    "jsonwebtoken": "^9.0.3",
     "php-serialize": "^4.1.1",
-    "specifier-resolution-node": "^1.1.1",
+    "specifier-resolution-node": "^1.1.4",
     "types-apple-iap": "^1.0.1"
   },
   "devDependencies": {}
