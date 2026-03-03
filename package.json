@@ -16,7 +16,7 @@
     "play": "GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/legacy_credentials/brace@brace.to/iap-001-73d0b5165508.json node --import=specifier-resolution-node/register src/play.js ~/tmp/purchases.json ~/tmp/purchase-users.json"
   },
   "dependencies": {
-    "@google-cloud/datastore": "^8.7.0",
+    "@google-cloud/datastore": "^10.1.0",
     "@stacks/encryption": "^6.13.0",
     "axios": "^1.13.6",
     "cors": "^2.8.6",
@@ -28,6 +28,5 @@
     "php-serialize": "^4.1.1",
     "specifier-resolution-node": "^1.1.4",
     "types-apple-iap": "^1.0.1"
-  },
-  "devDependencies": {}
+  }
 }
